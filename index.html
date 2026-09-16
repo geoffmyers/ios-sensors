@@ -1,0 +1,2458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>iOS Sensor Lab</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+  :root {
+    --bg: #080c10;
+    --surface: #0f1520;
+    --border: #1e2d42;
+    --accent: #00e5ff;
+    --accent2: #ff3d6e;
+    --accent3: #b9ff6a;
+    --text: #c8daea;
+    --dim: #4a6070;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Space Mono', monospace;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 24px 16px 60px;
+  }
+  header { text-align: center; padding: 40px 0 24px; }
+  .logo {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: clamp(26px, 7vw, 46px);
+    letter-spacing: -1px;
+    color: #fff;
+    line-height: 1;
+  }
+  .logo span { color: var(--accent); }
+  .tagline {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+
+  /* Steps */
+  .steps { display: flex; flex-direction: column; gap: 12px; margin: 24px 0; }
+  .step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .step-num {
+    font-family: 'Syne', sans-serif;
+    font-weight: 800;
+    font-size: 26px;
+    color: var(--border);
+    flex-shrink: 0;
+    width: 32px;
+    text-align: center;
+  }
+  .step.active .step-num { color: var(--accent); }
+  .step.done .step-num { color: var(--accent3); }
+  .step-text { font-size: 11px; line-height: 1.6; color: var(--dim); }
+  .step.active .step-text { color: var(--text); }
+  .step-status { margin-left: auto; font-size: 16px; flex-shrink: 0; }
+
+  /* Buttons */
+  .btn-wrap { display: flex; flex-direction: column; gap: 12px; margin: 8px 0 20px; }
+  .btn {
+    position: relative;
+    background: none;
+    border: 2px solid var(--accent);
+    color: var(--accent);
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 15px 28px;
+    cursor: pointer;
+    width: 100%;
+    overflow: hidden;
+    transition: all 0.2s;
+  }
+  .btn::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent);
+    transform: translateY(100%);
+    transition: transform 0.2s;
+    z-index: 0;
+  }
+  .btn:active::before { transform: translateY(0); }
+  .btn span { position: relative; z-index: 1; transition: color 0.2s; }
+  .btn:active span { color: var(--bg); }
+  .btn:disabled { border-color: var(--dim); color: var(--dim); cursor: not-allowed; }
+  .btn:disabled::before { display: none; }
+  .btn.secondary { border-color: var(--accent3); color: var(--accent3); }
+  .btn.secondary::before { background: var(--accent3); }
+
+  /* Status */
+  .global-status {
+    text-align: center; font-size: 11px; color: var(--dim);
+    letter-spacing: 2px; text-transform: uppercase; margin-bottom: 20px;
+  }
+  .dot {
+    display: inline-block; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--dim); margin-right: 6px; vertical-align: middle;
+  }
+  .dot.live { background: var(--accent3); box-shadow: 0 0 6px var(--accent3); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* Cards */
+  .sensor-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .sensor-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s;
+  }
+  .sensor-card.wide { grid-column: 1 / -1; }
+  .sensor-card.active { border-color: rgba(0,229,255,0.35); }
+  .sensor-card.active::after {
+    content: ''; position: absolute; top: 0; left: 0; right: 0;
+    height: 2px; background: var(--accent); box-shadow: 0 0 10px var(--accent);
+  }
+  .sensor-card.error { border-color: rgba(255,61,110,0.35); }
+  .sensor-card.error::after {
+    content: ''; position: absolute; top: 0; left: 0; right: 0;
+    height: 2px; background: var(--accent2);
+  }
+  .card-label {
+    font-size: 9px; letter-spacing: 2.5px; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 10px; display: flex; align-items: center; gap: 6px;
+  }
+  .card-value { font-size: 12px; color: #fff; line-height: 1.8; min-height: 20px; }
+  .card-value .num { color: var(--accent); font-size: 14px; font-weight: 700; }
+  .card-value .unit { font-size: 10px; color: var(--dim); margin-left: 2px; }
+  .card-value .err { color: var(--accent2); font-size: 10px; }
+  .pending { color: var(--dim); font-size: 11px; font-style: italic; }
+
+  /* Compass */
+  .compass-wrap { display: flex; align-items: center; gap: 16px; margin-top: 6px; }
+  .compass-ring {
+    width: 60px; height: 60px; border: 1px solid var(--border);
+    border-radius: 50%; position: relative; flex-shrink: 0;
+  }
+  .compass-ring::before {
+    content: 'N'; position: absolute; top: 3px; left: 50%;
+    transform: translateX(-50%); font-size: 8px; color: var(--dim);
+  }
+  .compass-needle {
+    position: absolute; top: 50%; left: 50%;
+    width: 2px; height: 22px;
+    background: linear-gradient(to bottom, var(--accent2) 50%, var(--accent3) 50%);
+    transform-origin: bottom center;
+    transform: translate(-50%, -100%) rotate(0deg);
+    transition: transform 0.1s;
+  }
+
+  /* Motion bars */
+  .bars { display: flex; gap: 8px; align-items: flex-end; height: 44px; margin-top: 8px; }
+  .bar-wrap {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; gap: 4px; height: 100%; justify-content: flex-end;
+  }
+  .bar { width: 100%; height: 4px; background: var(--accent); transition: height 0.08s; box-shadow: 0 0 6px var(--accent); }
+  .bar.b { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+  .bar.c { background: var(--accent3); box-shadow: 0 0 6px var(--accent3); }
+  .bar-label { font-size: 8px; color: var(--dim); letter-spacing: 1px; }
+
+  /* GPS coords */
+  .coord-row {
+    display: flex; justify-content: space-between;
+    border-bottom: 1px solid var(--border); padding: 4px 0;
+  }
+  .coord-key { color: var(--dim); font-size: 10px; }
+  .coord-val { color: var(--accent); font-size: 11px; }
+
+  /* Camera */
+  .camera-layout { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+  #camera-preview {
+    width: 100%; max-height: 180px; object-fit: cover;
+    display: none; border: 1px solid var(--border);
+  }
+  /* Hidden canvas for pixel sampling */
+  #cam-sample { display: none; }
+
+  /* Histogram */
+  .histogram-wrap { display: none; flex-direction: column; gap: 6px; }
+  .hist-row { display: flex; align-items: center; gap: 8px; }
+  .hist-label { font-size: 9px; color: var(--dim); width: 12px; text-align: right; flex-shrink: 0; }
+  .hist-canvas-wrap {
+    flex: 1; position: relative; height: 44px;
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+  }
+  .hist-canvas { width: 100%; height: 100%; display: block; }
+  .lum-canvas-wrap {
+    flex: 1; position: relative; height: 44px;
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+  }
+  .hist-section-label {
+    font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 4px;
+  }
+
+  /* Mic */
+  .mic-layout { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+
+  /* dBFS meter */
+  .dbfs-meter { display: none; }
+  .meter-track {
+    width: 100%; height: 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .meter-fill {
+    height: 100%;
+    width: 0%;
+    transition: width 0.06s;
+    background: linear-gradient(to right, var(--accent3), var(--accent), var(--accent2));
+  }
+  .meter-labels {
+    display: flex; justify-content: space-between;
+    font-size: 9px; color: var(--dim); margin-top: 3px; letter-spacing: 0.5px;
+  }
+
+  /* Spectrogram */
+  .spec-wrap { display: none; flex-direction: column; gap: 6px; }
+  .spec-section-label {
+    font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--dim);
+  }
+  .spec-canvas-wrap {
+    width: 100%; position: relative;
+    background: #000; border: 1px solid var(--border);
+  }
+  .spec-canvas { width: 100%; display: block; }
+
+  /* Freq bar chart */
+  .fft-canvas-wrap {
+    width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+  }
+  .fft-canvas { width: 100%; display: block; }
+
+  /* Freq axis labels */
+  .freq-axis {
+    display: flex; justify-content: space-between;
+    font-size: 8px; color: var(--dim); padding: 2px 0; letter-spacing: 0.5px;
+  }
+
+  /* Motion history charts */
+  .history-wrap {
+    display: none; flex-direction: column; gap: 4px; margin-top: 8px;
+  }
+  .history-label {
+    font-size: 8px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--dim);
+  }
+  .history-canvas-wrap {
+    width: 100%; height: 60px;
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+    position: relative;
+  }
+  .history-canvas { width: 100%; height: 100%; display: block; }
+  .history-legend {
+    display: flex; gap: 10px; font-size: 8px; color: var(--dim); margin-top: 2px;
+  }
+  .legend-swatch {
+    display: inline-block; width: 10px; height: 3px;
+    vertical-align: middle; margin-right: 3px;
+  }
+
+  /* Pitch detection */
+  .pitch-wrap { display: none; margin-top: 8px; }
+  .pitch-display {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 8px 0; height: 44px;
+  }
+  .pitch-note {
+    font-family: 'Syne', sans-serif; font-weight: 800;
+    font-size: 28px; color: var(--accent); line-height: 1;
+    min-width: 56px;
+  }
+  .pitch-freq { font-size: 12px; color: var(--text); min-width: 80px; }
+  .pitch-cents { font-size: 11px; min-width: 40px; }
+  .pitch-cents.sharp { color: var(--accent2); }
+  .pitch-cents.flat { color: var(--accent3); }
+  .pitch-meter-track {
+    width: 100%; height: 6px;
+    background: var(--bg); border: 1px solid var(--border);
+    position: relative;
+  }
+  .pitch-meter-center {
+    position: absolute; top: -1px; bottom: -1px; left: 50%;
+    width: 2px; transform: translateX(-50%);
+    background: var(--dim);
+  }
+  .pitch-meter-fill {
+    position: absolute; top: 0; bottom: 0;
+    height: 100%; width: 3px;
+    background: var(--accent); transition: left 0.08s;
+    left: 50%;
+  }
+
+  /* Chord detection */
+  .chord-wrap { display: none; margin-top: 10px; }
+  .chord-display {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 6px 0; height: 36px;
+  }
+  .chord-name {
+    font-family: 'Syne', sans-serif; font-weight: 800;
+    font-size: 24px; color: #fff; line-height: 1;
+    min-width: 36px;
+  }
+  .chord-quality {
+    font-size: 14px; color: var(--accent); font-weight: 700;
+  }
+  .chord-notes-row {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+    min-height: 24px;
+  }
+  .chord-note-badge {
+    font-size: 10px; font-weight: 700; letter-spacing: 1px;
+    padding: 3px 8px;
+    border: 1px solid var(--border);
+    background: rgba(0,229,255,0.08);
+    color: var(--accent);
+  }
+  .chord-note-badge.root {
+    border-color: var(--accent);
+    background: rgba(0,229,255,0.18);
+  }
+
+  /* G-force magnitude */
+  .gforce-row {
+    display: none; margin-top: 6px; padding: 6px 0;
+    border-top: 1px solid var(--border);
+    font-size: 11px;
+  }
+  .gforce-val {
+    font-family: 'Syne', sans-serif; font-weight: 800;
+    font-size: 22px; color: var(--accent); line-height: 1;
+  }
+
+  /* Oscilloscope waveform */
+  .scope-canvas-wrap {
+    width: 100%; height: 60px;
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+  }
+  .scope-canvas { width: 100%; height: 100%; display: block; }
+
+  /* dBFS peak hold marker */
+  .meter-peak {
+    position: absolute; top: 0; bottom: 0;
+    width: 2px; background: #fff;
+    left: 0%; transition: left 0.06s;
+    z-index: 1;
+  }
+
+  /* Pitch history chart */
+  .pitch-history-wrap {
+    display: none; flex-direction: column; gap: 4px; margin-top: 8px;
+  }
+  .pitch-history-canvas-wrap {
+    width: 100%; height: 60px;
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+    position: relative;
+  }
+  .pitch-history-canvas { width: 100%; height: 100%; display: block; }
+
+  /* Dominant color swatch */
+  .color-swatch-wrap {
+    display: none; align-items: center; gap: 10px;
+    margin-top: 6px; padding: 6px 0;
+    border-top: 1px solid var(--border);
+  }
+  .color-swatch {
+    width: 32px; height: 32px;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .color-hex {
+    font-size: 13px; font-weight: 700;
+    color: var(--accent); letter-spacing: 1px;
+  }
+  .color-rgb { font-size: 10px; color: var(--dim); }
+
+  /* Speech recognition */
+  .speech-controls { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .speech-btn {
+    background: none; border: 1px solid var(--accent2); color: var(--accent2);
+    font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 1px;
+    text-transform: uppercase; padding: 6px 14px; cursor: pointer;
+    transition: all 0.2s; flex-shrink: 0;
+  }
+  .speech-btn.listening { border-color: var(--accent3); color: var(--accent3); }
+  .speech-btn:disabled { border-color: var(--dim); color: var(--dim); cursor: not-allowed; }
+  .speech-status { font-size: 9px; color: var(--dim); letter-spacing: 1px; }
+  .speech-status.live { color: var(--accent3); }
+  .transcript-box {
+    margin-top: 8px; padding: 10px;
+    background: rgba(0,0,0,0.3); border: 1px solid var(--border);
+    font-size: 11px; color: var(--text); line-height: 1.6;
+    max-height: 120px; overflow-y: auto;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .transcript-interim { color: var(--dim); font-style: italic; }
+  .transcript-empty { color: var(--dim); font-style: italic; font-size: 10px; }
+
+  /* Orientation icon */
+  .orientation-icon {
+    display: inline-block; width: 28px; height: 40px;
+    border: 2px solid var(--accent); border-radius: 4px;
+    position: relative; transition: transform 0.3s;
+    margin: 4px 0;
+  }
+  .orientation-icon::after {
+    content: ''; position: absolute; top: 3px; left: 50%;
+    transform: translateX(-50%);
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--accent);
+  }
+
+  /* Mic amp bars (legacy, kept small) */
+  .mic-bars { display: none; gap: 3px; align-items: flex-end; height: 28px; }
+  .mic-bar { flex: 1; min-height: 2px; transition: height 0.06s; }
+
+  .note {
+    text-align: center; font-size: 10px; color: var(--dim);
+    margin-top: 24px; line-height: 1.7; padding: 16px 8px 0;
+    border-top: 1px solid var(--border);
+  }
+  .note strong { color: var(--accent2); }
+.map-dark { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9); }
+
+  /* Dead reckoning */
+  .dr-stats { display: none; margin-top: 8px; }
+  .dr-big {
+    font-family: 'Syne', sans-serif; font-weight: 800;
+    font-size: clamp(28px, 8vw, 42px); color: var(--accent);
+    line-height: 1.1; letter-spacing: -1px;
+  }
+  .dr-big .dr-unit {
+    font-size: 12px; font-weight: 400; color: var(--dim);
+    letter-spacing: 2px; margin-left: 4px;
+  }
+  .dr-row { display: flex; gap: 16px; margin-bottom: 8px; }
+  .dr-col { flex: 1; }
+  .dr-label {
+    font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 2px;
+  }
+  .dr-controls { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .dr-btn {
+    background: none; border: 1px solid var(--accent2); color: var(--accent2);
+    font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 1px;
+    text-transform: uppercase; padding: 6px 14px; cursor: pointer;
+    transition: all 0.2s; flex-shrink: 0;
+  }
+  .dr-btn:active { background: var(--accent2); color: var(--bg); }
+  .dr-drift-warn {
+    font-size: 9px; color: var(--accent2); letter-spacing: 0.5px;
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .dr-drift-warn.visible { opacity: 1; }
+
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="logo">iOS <span>SENSOR</span> LAB</div>
+    <div class="tagline">Web API Proof of Concept</div>
+  </header>
+
+  <div class="steps">
+    <div class="step active" id="step1">
+      <div class="step-num">1</div>
+      <div class="step-text">Tap <strong>Request Motion Permission</strong>. iOS requires this to fire synchronously from a direct tap — it cannot follow any async call.</div>
+      <div class="step-status" id="step1-status">⏳</div>
+    </div>
+    <div class="step" id="step2">
+      <div class="step-num">2</div>
+      <div class="step-text">Tap <strong>Request Camera + Mic + Location</strong>. iOS will show a system prompt for each — tap Allow on all three.</div>
+      <div class="step-status" id="step2-status">⏳</div>
+    </div>
+  </div>
+
+  <div class="btn-wrap">
+    <button class="btn" id="btn-motion" onclick="requestMotionPermission()">
+      <span>① Request Motion Permission</span>
+    </button>
+    <button class="btn secondary" id="btn-media" onclick="requestMediaPermissions()" disabled>
+      <span>② Request Camera + Mic + Location</span>
+    </button>
+  </div>
+
+  <div class="global-status">
+    <span class="dot" id="status-dot"></span><span id="status-text">WAITING</span>
+  </div>
+
+  <div class="sensor-grid">
+
+    <!-- Accelerometer -->
+    <div class="sensor-card" id="card-motion">
+      <div class="card-label"><span>📐</span> ACCELEROMETER</div>
+      <div class="card-value" id="val-motion"><span class="pending">— awaiting permission —</span></div>
+      <div class="bars" id="accel-bars" style="display:none;">
+        <div class="bar-wrap"><div class="bar" id="ab-x"></div><div class="bar-label">X</div></div>
+        <div class="bar-wrap"><div class="bar b" id="ab-y"></div><div class="bar-label">Y</div></div>
+        <div class="bar-wrap"><div class="bar c" id="ab-z"></div><div class="bar-label">Z</div></div>
+      </div>
+      <div class="gforce-row" id="gforce-row">
+        🚀 G-force <span class="gforce-val" id="gforce-val">—</span><span class="unit"> g</span>
+      </div>
+      <div class="history-wrap" id="accel-history">
+        <div class="history-label">▸ 📊 HISTORY</div>
+        <div class="history-canvas-wrap"><canvas class="history-canvas" id="accel-history-canvas"></canvas></div>
+        <div class="history-legend">
+          <span><span class="legend-swatch" style="background:var(--accent);"></span>X</span>
+          <span><span class="legend-swatch" style="background:var(--accent2);"></span>Y</span>
+          <span><span class="legend-swatch" style="background:var(--accent3);"></span>Z</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dead Reckoning -->
+    <div class="sensor-card wide" id="card-deadreck">
+      <div class="card-label"><span>🧮</span> DEAD RECKONING (ACCEL → VELOCITY → DISTANCE)</div>
+      <div class="card-value" id="val-deadreck"><span class="pending">— awaiting motion permission —</span></div>
+      <div class="dr-stats" id="dr-stats">
+        <div class="dr-row">
+          <div class="dr-col">
+            <div class="dr-label">🏃 SPEED</div>
+            <div class="dr-big" id="dr-speed">0.00<span class="dr-unit">m/s</span></div>
+          </div>
+          <div class="dr-col">
+            <div class="dr-label">📏 DISTANCE</div>
+            <div class="dr-big" id="dr-distance">0.00<span class="dr-unit">m</span></div>
+          </div>
+        </div>
+        <div class="coord-row"><span class="coord-key">⚡ Vx</span><span class="coord-val" id="dr-vx">0.00 m/s</span></div>
+        <div class="coord-row"><span class="coord-key">⚡ Vy</span><span class="coord-val" id="dr-vy">0.00 m/s</span></div>
+        <div class="coord-row"><span class="coord-key">⚡ Vz</span><span class="coord-val" id="dr-vz">0.00 m/s</span></div>
+        <div class="coord-row"><span class="coord-key">⏱️ ELAPSED</span><span class="coord-val" id="dr-elapsed">0.0 s</span></div>
+        <div class="coord-row"><span class="coord-key">🛑 ZUPT</span><span class="coord-val" id="dr-zupt">—</span></div>
+        <div class="history-wrap" id="dr-history" style="display:flex;">
+          <div class="history-label">▸ 📈 SPEED HISTORY</div>
+          <div class="history-canvas-wrap"><canvas class="history-canvas" id="dr-speed-canvas"></canvas></div>
+        </div>
+        <div class="dr-controls">
+          <button class="dr-btn" id="dr-reset-btn" onclick="resetDeadReckoning()">Reset</button>
+          <span class="dr-drift-warn" id="dr-drift-warn">⚠ Drift accumulating — reset recommended</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gyroscope -->
+    <div class="sensor-card" id="card-gyro">
+      <div class="card-label"><span>🌀</span> GYROSCOPE</div>
+      <div class="card-value" id="val-gyro"><span class="pending">— awaiting permission —</span></div>
+      <div class="bars" id="gyro-bars" style="display:none;">
+        <div class="bar-wrap"><div class="bar" id="gb-x"></div><div class="bar-label">α</div></div>
+        <div class="bar-wrap"><div class="bar b" id="gb-y"></div><div class="bar-label">β</div></div>
+        <div class="bar-wrap"><div class="bar c" id="gb-z"></div><div class="bar-label">γ</div></div>
+      </div>
+      <div class="history-wrap" id="gyro-history">
+        <div class="history-label">▸ 📊 HISTORY</div>
+        <div class="history-canvas-wrap"><canvas class="history-canvas" id="gyro-history-canvas"></canvas></div>
+        <div class="history-legend">
+          <span><span class="legend-swatch" style="background:var(--accent);"></span>α</span>
+          <span><span class="legend-swatch" style="background:var(--accent2);"></span>β</span>
+          <span><span class="legend-swatch" style="background:var(--accent3);"></span>γ</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Orientation -->
+    <div class="sensor-card" id="card-orientation">
+      <div class="card-label"><span>🧭</span> ORIENTATION + COMPASS</div>
+      <div class="compass-wrap">
+        <div class="compass-ring"><div class="compass-needle" id="compass-needle"></div></div>
+        <div class="card-value" id="val-orientation"><span class="pending">— awaiting permission —</span></div>
+      </div>
+      <div class="history-wrap" id="orient-history">
+        <div class="history-label">▸ 📊 HISTORY</div>
+        <div class="history-canvas-wrap"><canvas class="history-canvas" id="orient-history-canvas"></canvas></div>
+        <div class="history-legend">
+          <span><span class="legend-swatch" style="background:var(--accent);"></span>Hdg</span>
+          <span><span class="legend-swatch" style="background:var(--accent2);"></span>Pitch</span>
+          <span><span class="legend-swatch" style="background:var(--accent3);"></span>Roll</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Location -->
+    <div class="sensor-card" id="card-location">
+      <div class="card-label"><span>📍</span> GEOLOCATION (GPS)</div>
+      <div class="card-value" id="val-location"><span class="pending">— awaiting permission —</span></div>
+    </div>
+
+    <!-- Location Map -->
+    <div class="sensor-card wide" id="card-map">
+      <div class="card-label"><span>🗺️</span> LOCATION MAP</div>
+      <div class="card-value" id="val-map"><span class="pending">— awaiting location data —</span></div>
+      <div id="map-container" style="display:none; height: 300px; margin-top: 8px; border: 1px solid var(--border); z-index: 0;"></div>
+      <div id="map-legend" style="display:none; margin-top: 6px;">
+        <div class="coord-row"><span class="coord-key">📍 GPS</span><span class="coord-val" id="map-gps-label">Waiting…</span></div>
+        <div class="coord-row"><span class="coord-key">🌐 GEO IP</span><span class="coord-val" id="map-ip-label">Waiting…</span></div>
+        <div class="coord-row"><span class="coord-key">📏 DISTANCE</span><span class="coord-val" id="map-distance-label">—</span></div>
+      </div>
+    </div>
+
+    <!-- Camera (wide) -->
+    <div class="sensor-card wide" id="card-camera">
+      <div class="card-label"><span>📷</span> CAMERA + LIGHT SPECTRUM HISTOGRAM</div>
+      <div class="card-value" id="val-camera"><span class="pending">— awaiting permission —</span></div>
+
+      <div class="camera-layout">
+        <video id="camera-preview" autoplay playsinline muted></video>
+        <canvas id="cam-sample"></canvas>
+
+        <!-- Histogram -->
+        <div class="histogram-wrap" id="histogram-wrap">
+          <div class="hist-section-label">▸ 🌈 RGB CHANNELS</div>
+          <div class="hist-row">
+            <div class="hist-label" style="color:#ff4444;">R</div>
+            <div class="hist-canvas-wrap"><canvas class="hist-canvas" id="hist-r"></canvas></div>
+          </div>
+          <div class="hist-row">
+            <div class="hist-label" style="color:#44ff88;">G</div>
+            <div class="hist-canvas-wrap"><canvas class="hist-canvas" id="hist-g"></canvas></div>
+          </div>
+          <div class="hist-row">
+            <div class="hist-label" style="color:#4488ff;">B</div>
+            <div class="hist-canvas-wrap"><canvas class="hist-canvas" id="hist-b"></canvas></div>
+          </div>
+
+          <div class="hist-section-label" style="margin-top:6px;">▸ 💡 LUMINANCE</div>
+          <div class="hist-row">
+            <div class="hist-label">L</div>
+            <div class="lum-canvas-wrap"><canvas class="hist-canvas" id="hist-lum"></canvas></div>
+          </div>
+
+          <div class="hist-section-label" style="margin-top:6px; color: var(--text);" id="hist-stats"></div>
+
+          <div class="hist-section-label" style="margin-top:6px;">▸ 🎨 DOMINANT COLOR</div>
+          <div class="color-swatch-wrap" id="color-swatch-wrap">
+            <div class="color-swatch" id="color-swatch"></div>
+            <div>
+              <div class="color-hex" id="color-hex">#000000</div>
+              <div class="color-rgb" id="color-rgb">rgb(0, 0, 0)</div>
+            </div>
+          </div>
+
+          <div class="hist-section-label" style="margin-top:6px;">▸ 📊 RGB HISTORY</div>
+          <div class="history-canvas-wrap"><canvas class="history-canvas" id="rgb-history-canvas"></canvas></div>
+          <div class="history-legend">
+            <span><span class="legend-swatch" style="background:#ff4444;"></span>R</span>
+            <span><span class="legend-swatch" style="background:#44ff88;"></span>G</span>
+            <span><span class="legend-swatch" style="background:#4488ff;"></span>B</span>
+          </div>
+
+          <div class="hist-section-label" style="margin-top:6px;">▸ 📈 LUMINANCE HISTORY</div>
+          <div class="history-canvas-wrap"><canvas class="history-canvas" id="lum-history-canvas"></canvas></div>
+          <div class="history-legend">
+            <span><span class="legend-swatch" style="background:var(--accent);"></span>Avg Lum</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Microphone (wide) -->
+    <div class="sensor-card wide" id="card-mic">
+      <div class="card-label"><span>🎙️</span> MICROPHONE + SOUND SPECTRUM</div>
+      <div class="card-value" id="val-mic"><span class="pending">— awaiting permission —</span></div>
+
+      <!-- Pitch detection -->
+      <div class="pitch-wrap" id="pitch-wrap">
+        <div class="spec-section-label">▸ 🎵 PITCH DETECTION</div>
+        <div class="pitch-display">
+          <div class="pitch-note" id="pitch-note">—</div>
+          <div class="pitch-freq" id="pitch-freq"></div>
+          <div class="pitch-cents" id="pitch-cents"></div>
+        </div>
+        <div class="pitch-meter-track">
+          <div class="pitch-meter-center"></div>
+          <div class="pitch-meter-fill" id="pitch-meter-fill"></div>
+        </div>
+      </div>
+
+      <!-- Chord detection -->
+      <div class="chord-wrap" id="chord-wrap">
+        <div class="spec-section-label">▸ 🎹 CHORD DETECTION</div>
+        <div class="chord-display">
+          <div class="chord-name" id="chord-name">—</div>
+          <div class="chord-quality" id="chord-quality"></div>
+        </div>
+        <div class="chord-notes-row" id="chord-notes-row"></div>
+      </div>
+
+      <!-- dBFS meter -->
+      <div class="dbfs-meter" id="dbfs-meter">
+        <div class="meter-track"><div class="meter-fill" id="meter-fill"></div><div class="meter-peak" id="meter-peak"></div></div>
+        <div class="meter-labels">
+          <span>−60 dBFS</span><span>−48</span><span>−36</span><span>−24</span><span>−12</span><span>0</span>
+        </div>
+      </div>
+
+      <!-- Pitch history chart -->
+      <div class="pitch-history-wrap" id="pitch-history-wrap">
+        <div class="history-label">▸ 🎵 PITCH HISTORY</div>
+        <div class="pitch-history-canvas-wrap"><canvas class="pitch-history-canvas" id="pitch-history-canvas"></canvas></div>
+      </div>
+
+      <!-- Oscilloscope waveform -->
+      <div class="spec-wrap" id="scope-wrap" style="display:none;">
+        <div class="spec-section-label">▸ 〰️ OSCILLOSCOPE (TIME DOMAIN)</div>
+        <div class="scope-canvas-wrap"><canvas class="scope-canvas" id="scope-canvas" height="60"></canvas></div>
+      </div>
+
+      <div class="mic-layout">
+        <!-- Spectrogram (scrolling waterfall) -->
+        <div class="spec-wrap" id="spec-wrap">
+          <div class="spec-section-label">▸ 🔥 SPECTROGRAM (TIME × FREQUENCY)</div>
+          <div class="spec-canvas-wrap">
+            <canvas class="spec-canvas" id="spec-canvas" height="80"></canvas>
+          </div>
+          <div class="freq-axis">
+            <span>0 Hz</span><span>2k</span><span>4k</span><span>8k</span><span>16k</span><span>~22k</span>
+          </div>
+
+          <div class="spec-section-label" style="margin-top:6px;">▸ 📶 FFT FREQUENCY SPECTRUM</div>
+          <div class="fft-canvas-wrap">
+            <canvas class="fft-canvas" id="fft-canvas" height="70"></canvas>
+          </div>
+          <div class="freq-axis">
+            <span>0 Hz</span><span>2k</span><span>4k</span><span>8k</span><span>16k</span><span>~22k</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen Orientation -->
+    <div class="sensor-card" id="card-screen-orient">
+      <div class="card-label"><span>📱</span> SCREEN ORIENTATION</div>
+      <div class="card-value" id="val-screen-orient"><span class="pending">— detecting —</span></div>
+      <div style="text-align:center;">
+        <div class="orientation-icon" id="orient-icon"></div>
+      </div>
+    </div>
+
+    <!-- Visual Viewport -->
+    <div class="sensor-card" id="card-viewport">
+      <div class="card-label"><span>🔲</span> VISUAL VIEWPORT</div>
+      <div class="card-value" id="val-viewport"><span class="pending">— detecting —</span></div>
+    </div>
+
+    <!-- Speech Recognition (wide) -->
+    <div class="sensor-card wide" id="card-speech">
+      <div class="card-label"><span>💬</span> SPEECH RECOGNITION</div>
+      <div class="card-value" id="val-speech"><span class="pending">— awaiting mic permission —</span></div>
+      <div class="speech-controls" id="speech-controls" style="display:none;">
+        <button class="speech-btn" id="speech-btn" onclick="toggleSpeechRecognition()">Start</button>
+        <span class="speech-status" id="speech-status">IDLE</span>
+      </div>
+      <div class="transcript-box" id="transcript-box" style="display:none;">
+        <span class="transcript-empty">Tap Start and speak…</span>
+      </div>
+    </div>
+
+    <!-- Network / IP -->
+    <div class="sensor-card wide" id="card-network">
+      <div class="card-label"><span>🌐</span> NETWORK / IP</div>
+      <div class="card-value" id="val-network"><span class="pending">— fetching —</span></div>
+    </div>
+
+    <!-- Client / Device -->
+    <div class="sensor-card wide" id="card-client">
+      <div class="card-label"><span>🖥️</span> CLIENT / DEVICE</div>
+      <div class="card-value" id="val-client"><span class="pending">— detecting —</span></div>
+    </div>
+
+  </div><!-- /sensor-grid -->
+
+  <div class="note">
+    Sensor processing runs in this page. Speech recognition is the browser's own, which may send audio to its maker's servers. Network card uses /cdn-cgi/trace. Map uses ipapi.co for IP geolocation. iOS Safari 13+.
+  </div>
+
+  <div class="note" style="margin-top: 8px;">
+    Built with <a href="https://leafletjs.com/" target="_blank" rel="noopener">Leaflet</a> (BSD-2-Clause) ·
+    map tiles and data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL) ·
+    IP geolocation by <a href="https://ipapi.co/" target="_blank" rel="noopener">ipapi.co</a> ·
+    type set in <a href="https://fonts.google.com/specimen/Syne" target="_blank" rel="noopener">Syne</a>
+    and <a href="https://fonts.google.com/specimen/Space+Mono" target="_blank" rel="noopener">Space Mono</a> (OFL)
+  </div>
+
+  <div class="note" style="margin-top: 8px;">
+    © 2026 <a href="https://www.geoffmyers.com" style="color: var(--accent); text-decoration: none;">Geoff Myers</a>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function setCard(id, state) {
+  var c = document.getElementById('card-' + id);
+  c.classList.remove('active', 'error');
+  if (state) c.classList.add(state);
+}
+function setVal(id, html) {
+  document.getElementById('val-' + id).innerHTML = html;
+}
+function fmt(n, d) {
+  d = (d === undefined) ? 2 : d;
+  return (n != null) ? Number(n).toFixed(d) : '—';
+}
+function updateBar(id, val, max) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.style.height = Math.max(4, Math.min(Math.abs(val || 0) / max, 1) * 38) + 'px';
+}
+function setStatus(text, live) {
+  document.getElementById('status-text').textContent = text;
+  document.getElementById('status-dot').className = 'dot' + (live ? ' live' : '');
+}
+
+// ─── History Chart System ─────────────────────────────────────────────────────
+
+var HISTORY_LEN = 150;  // samples to retain
+
+function createHistoryBuffer() {
+  return { x: new Float32Array(HISTORY_LEN), y: new Float32Array(HISTORY_LEN), z: new Float32Array(HISTORY_LEN), idx: 0, full: false };
+}
+
+function pushHistory(buf, x, y, z) {
+  buf.x[buf.idx] = x; buf.y[buf.idx] = y; buf.z[buf.idx] = z;
+  buf.idx++;
+  if (buf.idx >= HISTORY_LEN) { buf.idx = 0; buf.full = true; }
+}
+
+var accelHistory  = createHistoryBuffer();
+var gyroHistory   = createHistoryBuffer();
+var orientHistory = createHistoryBuffer();
+var rgbHistory    = createHistoryBuffer();
+var lumHistory    = createHistoryBuffer(); // only uses x channel
+var accelHistCtx  = null;
+var gyroHistCtx   = null;
+var orientHistCtx = null;
+var rgbHistCtx    = null;
+var lumHistCtx    = null;
+var motionChartRunning = false;
+
+function initHistoryCanvas(canvasId) {
+  var c  = document.getElementById(canvasId);
+  var wr = c.parentElement;
+  c.width  = wr.clientWidth || 300;
+  c.height = wr.clientHeight || 60;
+  return c.getContext('2d');
+}
+
+function drawHistory(ctx, buf, maxVal) {
+  var cw = ctx.canvas.width, ch = ctx.canvas.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  // Zero line
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.beginPath(); ctx.moveTo(0, ch / 2); ctx.lineTo(cw, ch / 2); ctx.stroke();
+
+  var count = buf.full ? HISTORY_LEN : buf.idx;
+  if (count < 2) return;
+
+  var colors = ['#00e5ff', '#ff3d6e', '#b9ff6a'];
+  var axes   = ['x', 'y', 'z'];
+  var start  = buf.full ? buf.idx : 0;
+
+  for (var a = 0; a < 3; a++) {
+    var data = buf[axes[a]];
+    ctx.strokeStyle = colors[a];
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (var i = 0; i < count; i++) {
+      var si  = (start + i) % HISTORY_LEN;
+      var px  = (i / (HISTORY_LEN - 1)) * cw;
+      var val = data[si];
+      var py  = ch / 2 - (val / maxVal) * (ch / 2);
+      py = Math.max(0, Math.min(ch, py));
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+}
+
+// Draw history for orientation (heading 0-360, pitch/roll ±180) — maps to 0→top, 360→bottom for heading
+function drawOrientHistory(ctx, buf) {
+  var cw = ctx.canvas.width, ch = ctx.canvas.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  // Grid lines at 0°, 90°, 180°, 270° (mapped into 0–360 range)
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  var gridVals = [0, 90, 180, 270];
+  for (var g = 0; g < gridVals.length; g++) {
+    var gy = (gridVals[g] / 360) * ch;
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(cw, gy); ctx.stroke();
+  }
+
+  var count = buf.full ? HISTORY_LEN : buf.idx;
+  if (count < 2) return;
+  var start = buf.full ? buf.idx : 0;
+
+  // Heading: 0-360 range (x channel), Pitch: ±90 (y channel), Roll: ±180 (z channel)
+  var configs = [
+    { key: 'x', color: '#00e5ff', min: 0, max: 360 },      // heading
+    { key: 'y', color: '#ff3d6e', min: -90, max: 90 },      // pitch
+    { key: 'z', color: '#b9ff6a', min: -180, max: 180 }     // roll
+  ];
+
+  for (var a = 0; a < configs.length; a++) {
+    var cfg = configs[a];
+    var data = buf[cfg.key];
+    ctx.strokeStyle = cfg.color;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (var i = 0; i < count; i++) {
+      var si = (start + i) % HISTORY_LEN;
+      var px = (i / (HISTORY_LEN - 1)) * cw;
+      var val = data[si];
+      var py = ch - ((val - cfg.min) / (cfg.max - cfg.min)) * ch;
+      py = Math.max(0, Math.min(ch, py));
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+}
+
+// Draw history for 0-255 range with custom colors per channel
+function drawRGBHistory(ctx, buf) {
+  var cw = ctx.canvas.width, ch = ctx.canvas.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  // Grid line at 128 (midpoint)
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, ch / 2); ctx.lineTo(cw, ch / 2); ctx.stroke();
+
+  var count = buf.full ? HISTORY_LEN : buf.idx;
+  if (count < 2) return;
+  var start = buf.full ? buf.idx : 0;
+
+  var colors = ['#ff4444', '#44ff88', '#4488ff'];
+  var axes   = ['x', 'y', 'z'];
+
+  for (var a = 0; a < 3; a++) {
+    var data = buf[axes[a]];
+    ctx.strokeStyle = colors[a];
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (var i = 0; i < count; i++) {
+      var si = (start + i) % HISTORY_LEN;
+      var px = (i / (HISTORY_LEN - 1)) * cw;
+      var py = ch - (data[si] / 255) * ch;
+      py = Math.max(0, Math.min(ch, py));
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+}
+
+// Draw single-channel history for luminance (0-255)
+function drawLumHistory(ctx, buf) {
+  var cw = ctx.canvas.width, ch = ctx.canvas.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  // Grid line at 128
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, ch / 2); ctx.lineTo(cw, ch / 2); ctx.stroke();
+
+  var count = buf.full ? HISTORY_LEN : buf.idx;
+  if (count < 2) return;
+  var start = buf.full ? buf.idx : 0;
+
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (var i = 0; i < count; i++) {
+    var si = (start + i) % HISTORY_LEN;
+    var px = (i / (HISTORY_LEN - 1)) * cw;
+    var py = ch - (buf.x[si] / 255) * ch;
+    py = Math.max(0, Math.min(ch, py));
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+}
+
+// ─── DEAD RECKONING (Accel Integration) ───────────────────────────────────────
+
+var drVx = 0, drVy = 0, drVz = 0;        // velocity (m/s)
+var drDist = 0;                           // total scalar distance (m)
+var drLastTime = null;                     // last event timestamp (ms)
+var drElapsed = 0;                         // total elapsed time (s)
+var drZuptCount = 0;                       // consecutive low-accel samples
+var drZuptThreshold = 0.15;                // m/s² magnitude to trigger ZUPT
+var drZuptSamples = 8;                     // how many consecutive quiet samples to zero velocity
+var drZuptActive = false;
+var drDriftWarnTime = 10;                  // seconds before showing drift warning
+var drSpeedHistCtx = null;
+var DR_HIST_LEN = 200;
+var drSpeedBuf = new Float32Array(DR_HIST_LEN);
+var drSpeedIdx = 0;
+var drSpeedFull = false;
+var drActive = false;
+
+function resetDeadReckoning() {
+  drVx = 0; drVy = 0; drVz = 0;
+  drDist = 0; drElapsed = 0;
+  drLastTime = null; drZuptCount = 0; drZuptActive = false;
+  drSpeedBuf = new Float32Array(DR_HIST_LEN);
+  drSpeedIdx = 0; drSpeedFull = false;
+  document.getElementById('dr-drift-warn').classList.remove('visible');
+  updateDeadReckoningUI();
+}
+
+function initDeadReckoning() {
+  drActive = true;
+  setCard('deadreck', 'active');
+  setVal('deadreck', '');
+  document.getElementById('dr-stats').style.display = 'block';
+  drSpeedHistCtx = initHistoryCanvas('dr-speed-canvas');
+  drLastTime = null;
+}
+
+function processDeadReckoning(e) {
+  if (!drActive) return;
+
+  // Prefer gravity-removed acceleration; fall back to manual gravity subtraction
+  var linAcc = e.acceleration;
+  var ax, ay, az;
+  if (linAcc && linAcc.x != null) {
+    ax = linAcc.x || 0;
+    ay = linAcc.y || 0;
+    az = linAcc.z || 0;
+  } else {
+    // Fallback: subtract estimated gravity from accelerationIncludingGravity
+    var raw = e.accelerationIncludingGravity;
+    if (!raw) return;
+    ax = (raw.x || 0);
+    ay = (raw.y || 0);
+    az = (raw.z || 0) - 9.81;  // crude gravity removal (assumes phone upright)
+  }
+
+  var now = e.timeStamp || performance.now();
+  if (drLastTime === null) { drLastTime = now; return; }
+  var dt = (now - drLastTime) / 1000;  // seconds
+  drLastTime = now;
+
+  // Clamp dt to avoid huge jumps from tab switching
+  if (dt <= 0 || dt > 0.5) return;
+
+  drElapsed += dt;
+
+  // ── ZUPT: zero-velocity update when device is still ──
+  var mag = Math.sqrt(ax * ax + ay * ay + az * az);
+  if (mag < drZuptThreshold) {
+    drZuptCount++;
+    if (drZuptCount >= drZuptSamples) {
+      drVx = 0; drVy = 0; drVz = 0;
+      drZuptActive = true;
+    }
+  } else {
+    drZuptCount = 0;
+    drZuptActive = false;
+  }
+
+  // ── Trapezoidal integration: acceleration → velocity ──
+  if (!drZuptActive) {
+    drVx += ax * dt;
+    drVy += ay * dt;
+    drVz += az * dt;
+  }
+
+  // ── Scalar speed and distance ──
+  var speed = Math.sqrt(drVx * drVx + drVy * drVy + drVz * drVz);
+  drDist += speed * dt;
+
+  // ── Speed history ──
+  drSpeedBuf[drSpeedIdx] = speed;
+  drSpeedIdx++;
+  if (drSpeedIdx >= DR_HIST_LEN) { drSpeedIdx = 0; drSpeedFull = true; }
+
+  // Show drift warning after threshold
+  if (drElapsed > drDriftWarnTime) {
+    document.getElementById('dr-drift-warn').classList.add('visible');
+  }
+}
+
+function updateDeadReckoningUI() {
+  var speed = Math.sqrt(drVx * drVx + drVy * drVy + drVz * drVz);
+
+  // Big numbers
+  document.getElementById('dr-speed').innerHTML =
+    speed.toFixed(2) + '<span class="dr-unit">m/s</span>';
+  document.getElementById('dr-distance').innerHTML =
+    (drDist < 1000 ? drDist.toFixed(2) + '<span class="dr-unit">m</span>'
+                    : (drDist / 1000).toFixed(3) + '<span class="dr-unit">km</span>');
+
+  // Detail rows
+  document.getElementById('dr-vx').textContent = drVx.toFixed(3) + ' m/s';
+  document.getElementById('dr-vy').textContent = drVy.toFixed(3) + ' m/s';
+  document.getElementById('dr-vz').textContent = drVz.toFixed(3) + ' m/s';
+  document.getElementById('dr-elapsed').textContent = drElapsed.toFixed(1) + ' s';
+  document.getElementById('dr-zupt').textContent = drZuptActive ? 'Active (still)' : 'Inactive (moving)';
+
+  // Speed history chart
+  if (drSpeedHistCtx) drawDRSpeedHistory(drSpeedHistCtx);
+}
+
+function drawDRSpeedHistory(ctx) {
+  var cw = ctx.canvas.width, ch = ctx.canvas.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  var count = drSpeedFull ? DR_HIST_LEN : drSpeedIdx;
+  if (count < 2) return;
+  var start = drSpeedFull ? drSpeedIdx : 0;
+
+  // Find max for auto-scaling
+  var maxSpeed = 0.5;  // minimum scale
+  for (var i = 0; i < count; i++) {
+    var si = (start + i) % DR_HIST_LEN;
+    if (drSpeedBuf[si] > maxSpeed) maxSpeed = drSpeedBuf[si];
+  }
+
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, ch / 2); ctx.lineTo(cw, ch / 2); ctx.stroke();
+
+  // Speed line
+  ctx.strokeStyle = '#b9ff6a';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (var i = 0; i < count; i++) {
+    var si = (start + i) % DR_HIST_LEN;
+    var px = (i / (DR_HIST_LEN - 1)) * cw;
+    var py = ch - (drSpeedBuf[si] / maxSpeed) * ch;
+    py = Math.max(0, Math.min(ch, py));
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+}
+
+var drUICounter = 0;  // throttle UI updates
+
+function motionChartLoop() {
+  if (!motionChartRunning) return;
+  requestAnimationFrame(motionChartLoop);
+  if (accelHistCtx)  drawHistory(accelHistCtx, accelHistory, 20);
+  if (gyroHistCtx)   drawHistory(gyroHistCtx,  gyroHistory, 200);
+  if (orientHistCtx) drawOrientHistory(orientHistCtx, orientHistory);
+
+  // Update dead reckoning UI at ~15 fps (every 4th frame of ~60fps)
+  drUICounter++;
+  if (drActive && drUICounter % 4 === 0) updateDeadReckoningUI();
+}
+
+// ─── STEP 1: Motion ───────────────────────────────────────────────────────────
+
+function requestMotionPermission() {
+  var btn = document.getElementById('btn-motion');
+  btn.disabled = true;
+  btn.querySelector('span').textContent = '⏳ Requesting…';
+
+  if (typeof DeviceMotionEvent !== 'undefined' &&
+      typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission()
+      .then(function(res) {
+        if (res === 'granted') { motionGranted(); }
+        else { motionDenied('Permission denied'); }
+      })
+      .catch(function(e) { motionDenied(e.message); });
+  } else if (typeof DeviceMotionEvent !== 'undefined') {
+    motionGranted();
+  } else {
+    motionDenied('DeviceMotionEvent not supported');
+  }
+}
+
+function motionGranted() {
+  document.getElementById('btn-motion').querySelector('span').textContent = '✓ Motion enabled';
+  document.getElementById('step1').classList.replace('active', 'done');
+  document.getElementById('step1-status').textContent = '✅';
+  document.getElementById('step2').classList.add('active');
+  document.getElementById('btn-media').disabled = false;
+  setStatus('MOTION OK — TAP ②', false);
+
+  // Show and init history charts
+  document.getElementById('accel-history').style.display = 'flex';
+  document.getElementById('gyro-history').style.display = 'flex';
+  document.getElementById('orient-history').style.display = 'flex';
+  accelHistCtx  = initHistoryCanvas('accel-history-canvas');
+  gyroHistCtx   = initHistoryCanvas('gyro-history-canvas');
+  orientHistCtx = initHistoryCanvas('orient-history-canvas');
+  motionChartRunning = true;
+  motionChartLoop();
+
+  initDeadReckoning();
+
+  window.addEventListener('devicemotion', onMotion);
+  window.addEventListener('deviceorientation', onOrientation);
+}
+
+function motionDenied(msg) {
+  document.getElementById('step1-status').textContent = '❌';
+  var btn = document.getElementById('btn-motion');
+  btn.disabled = false;
+  btn.querySelector('span').textContent = '① Retry Motion Permission';
+  setCard('motion', 'error'); setVal('motion', '<span class="err">' + msg + '</span>');
+  setCard('gyro',   'error'); setVal('gyro',   '<span class="err">' + msg + '</span>');
+  setCard('orientation', 'error'); setVal('orientation', '<span class="err">' + msg + '</span>');
+  setCard('deadreck', 'error'); setVal('deadreck', '<span class="err">' + msg + '</span>');
+  document.getElementById('step2').classList.add('active');
+  document.getElementById('btn-media').disabled = false;
+}
+
+function onMotion(e) {
+  processDeadReckoning(e);
+
+  var acc = e.accelerationIncludingGravity;
+  var rot = e.rotationRate;
+  if (acc) {
+    setCard('motion', 'active');
+    var gx = acc.x || 0, gy = acc.y || 0, gz = acc.z || 0;
+    var gforce = Math.sqrt(gx * gx + gy * gy + gz * gz) / 9.80665;
+    setVal('motion',
+      '<div>X <span class="num">' + fmt(acc.x) + '</span><span class="unit">m/s²</span></div>' +
+      '<div>Y <span class="num">' + fmt(acc.y) + '</span><span class="unit">m/s²</span></div>' +
+      '<div>Z <span class="num">' + fmt(acc.z) + '</span><span class="unit">m/s²</span></div>');
+    document.getElementById('accel-bars').style.display = 'flex';
+    updateBar('ab-x', acc.x, 20); updateBar('ab-y', acc.y, 20); updateBar('ab-z', acc.z, 20);
+    var gRow = document.getElementById('gforce-row');
+    gRow.style.display = 'block';
+    document.getElementById('gforce-val').textContent = gforce.toFixed(2);
+    pushHistory(accelHistory, acc.x || 0, acc.y || 0, acc.z || 0);
+  }
+  if (rot) {
+    setCard('gyro', 'active');
+    setVal('gyro',
+      '<div>α <span class="num">' + fmt(rot.alpha) + '</span><span class="unit">°/s</span></div>' +
+      '<div>β <span class="num">' + fmt(rot.beta)  + '</span><span class="unit">°/s</span></div>' +
+      '<div>γ <span class="num">' + fmt(rot.gamma) + '</span><span class="unit">°/s</span></div>');
+    document.getElementById('gyro-bars').style.display = 'flex';
+    updateBar('gb-x', rot.alpha, 200); updateBar('gb-y', rot.beta, 200); updateBar('gb-z', rot.gamma, 200);
+    pushHistory(gyroHistory, rot.alpha || 0, rot.beta || 0, rot.gamma || 0);
+  }
+}
+
+function degreesToCardinal(deg) {
+  if (deg == null) return '—';
+  var dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  return dirs[Math.round(((deg % 360 + 360) % 360) / 45) % 8];
+}
+
+function onOrientation(e) {
+  setCard('orientation', 'active');
+  var cardinal = degreesToCardinal(e.alpha);
+  setVal('orientation',
+    '<div>Heading <span class="num">' + fmt(e.alpha, 1) + '</span><span class="unit">°</span> <span class="num">' + cardinal + '</span></div>' +
+    '<div>Pitch   <span class="num">' + fmt(e.beta,  1) + '</span><span class="unit">°</span></div>' +
+    '<div>Roll    <span class="num">' + fmt(e.gamma, 1) + '</span><span class="unit">°</span></div>');
+  if (e.alpha != null) {
+    document.getElementById('compass-needle').style.transform =
+      'translate(-50%, -100%) rotate(' + e.alpha + 'deg)';
+  }
+  pushHistory(orientHistory, e.alpha || 0, e.beta || 0, e.gamma || 0);
+}
+
+// ─── STEP 2: Camera + Mic + Location ─────────────────────────────────────────
+
+function requestMediaPermissions() {
+  var btn = document.getElementById('btn-media');
+  btn.disabled = true;
+  btn.querySelector('span').textContent = '⏳ Watch for iOS prompts…';
+  document.getElementById('step2-status').textContent = '⏳';
+  setStatus('WAITING FOR PROMPTS…', false);
+
+  var camP = navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    .then(function(s) { setupCamera(s); })
+    .catch(function(e) { setCard('camera','error'); setVal('camera','<span class="err">Camera: '+e.message+'</span>'); });
+
+  var micP = navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(function(s) { setupMic(s); })
+    .catch(function(e) { setCard('mic','error'); setVal('mic','<span class="err">Mic: '+e.message+'</span>'); });
+
+  navigator.geolocation.watchPosition(
+    function(pos) { setupLocation(pos); },
+    function(e)   { setCard('location','error'); setVal('location','<span class="err">GPS: '+e.message+'</span>'); },
+    { enableHighAccuracy: true, maximumAge: 2000 }
+  );
+
+  Promise.allSettled([camP, micP]).then(function() {
+    btn.querySelector('span').textContent = '✓ Camera, mic and location requested';
+    document.getElementById('step2').classList.add('done');
+    document.getElementById('step2-status').textContent = '✅';
+    setStatus('ALL SENSORS ACTIVE', true);
+    setupSpeechRecognition();
+  });
+}
+
+// ─── CAMERA + HISTOGRAM ───────────────────────────────────────────────────────
+
+function setupCamera(stream) {
+  var video   = document.getElementById('camera-preview');
+  var sample  = document.getElementById('cam-sample');
+  video.srcObject = stream;
+  video.style.display = 'block';
+
+  var track = stream.getVideoTracks()[0];
+  var s     = track.getSettings();
+  setCard('camera', 'active');
+  setVal('camera',
+    '<div>Resolution <span class="num">' + (s.width||'?') + ' × ' + (s.height||'?') + '</span></div>' +
+    '<div>FPS <span class="num">' + (s.frameRate ? Math.round(s.frameRate) : '?') + '</span></div>' +
+    '<div>Facing <span class="num">' + (s.facingMode||'env') + '</span></div>');
+
+  // Show histogram container
+  document.getElementById('histogram-wrap').style.display = 'flex';
+  document.getElementById('histogram-wrap').style.flexDirection = 'column';
+
+  // Downsample canvas — small for perf on mobile
+  var W = 128, H = 72;
+  sample.width  = W;
+  sample.height = H;
+  var sCtx = sample.getContext('2d');
+
+  // Init histogram canvases
+  var histIds  = ['hist-r', 'hist-g', 'hist-b', 'hist-lum'];
+  var histCtxs = {};
+  histIds.forEach(function(id) {
+    var c  = document.getElementById(id);
+    var wr = c.parentElement;
+    c.width  = wr.clientWidth  || 256;
+    c.height = wr.clientHeight || 44;
+    histCtxs[id] = c.getContext('2d');
+  });
+
+  // Init RGB + Luminance history canvases
+  rgbHistCtx = initHistoryCanvas('rgb-history-canvas');
+  lumHistCtx = initHistoryCanvas('lum-history-canvas');
+
+  var BINS = 256;
+
+  function drawHistogram(ctx, bins, color, peak) {
+    var cw = ctx.canvas.width, ch = ctx.canvas.height;
+    ctx.clearRect(0, 0, cw, ch);
+    var bw = cw / BINS;
+    for (var i = 0; i < BINS; i++) {
+      var h = (bins[i] / peak) * ch;
+      ctx.fillStyle = color;
+      ctx.fillRect(i * bw, ch - h, Math.max(1, bw - 0.5), h);
+    }
+    // Midpoint line
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath(); ctx.moveTo(cw * 0.5, 0); ctx.lineTo(cw * 0.5, ch); ctx.stroke();
+  }
+
+  function processFrame() {
+    if (video.readyState < 2) { requestAnimationFrame(processFrame); return; }
+
+    sCtx.drawImage(video, 0, 0, W, H);
+    var px;
+    try { px = sCtx.getImageData(0, 0, W, H).data; }
+    catch(e) { requestAnimationFrame(processFrame); return; }
+
+    var rBins = new Float32Array(BINS);
+    var gBins = new Float32Array(BINS);
+    var bBins = new Float32Array(BINS);
+    var lBins = new Float32Array(BINS);
+
+    var totalR = 0, totalG = 0, totalB = 0, totalL = 0, n = W * H;
+
+    for (var i = 0; i < px.length; i += 4) {
+      var r = px[i], g = px[i+1], b = px[i+2];
+      // Perceived luminance (BT.601)
+      var l = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+      rBins[r]++; gBins[g]++; bBins[b]++; lBins[l]++;
+      totalR += r; totalG += g; totalB += b; totalL += l;
+    }
+
+    // Find peaks (skip bin 0 and 255 for scale — they often spike)
+    function peakOf(bins) {
+      var p = 0;
+      for (var i = 1; i < 254; i++) if (bins[i] > p) p = bins[i];
+      return p || 1;
+    }
+
+    drawHistogram(histCtxs['hist-r'],   rBins, 'rgba(255,68,68,0.85)',  peakOf(rBins));
+    drawHistogram(histCtxs['hist-g'],   gBins, 'rgba(68,255,136,0.85)', peakOf(gBins));
+    drawHistogram(histCtxs['hist-b'],   bBins, 'rgba(68,136,255,0.85)', peakOf(bBins));
+    drawHistogram(histCtxs['hist-lum'], lBins, 'rgba(200,218,234,0.7)', peakOf(lBins));
+
+    // Stats
+    var avgR = Math.round(totalR / n);
+    var avgG = Math.round(totalG / n);
+    var avgB = Math.round(totalB / n);
+    var avgL = Math.round(totalL / n);
+    document.getElementById('hist-stats').innerHTML =
+      'Avg R:<span style="color:#ff4444"> ' + avgR + '</span>  ' +
+      'G:<span style="color:#44ff88"> ' + avgG + '</span>  ' +
+      'B:<span style="color:#4488ff"> ' + avgB + '</span>  ' +
+      '  Lum:<span style="color:var(--accent)"> ' + avgL + '</span>/255';
+
+    // ── Dominant color swatch (quantized k-means-lite) ──
+    // Bucket colors into 4x4x4 grid (64 buckets) and find the most common
+    var buckets = new Uint32Array(64);
+    var bucketR = new Float64Array(64);
+    var bucketG = new Float64Array(64);
+    var bucketB = new Float64Array(64);
+    for (var i = 0; i < px.length; i += 4) {
+      var ri = (px[i] >> 6) & 3;       // 0-3
+      var gi = (px[i+1] >> 6) & 3;
+      var bi = (px[i+2] >> 6) & 3;
+      var bIdx = ri * 16 + gi * 4 + bi;
+      buckets[bIdx]++;
+      bucketR[bIdx] += px[i];
+      bucketG[bIdx] += px[i+1];
+      bucketB[bIdx] += px[i+2];
+    }
+    var maxBucket = 0, maxBucketIdx = 0;
+    for (var i = 0; i < 64; i++) {
+      if (buckets[i] > maxBucket) { maxBucket = buckets[i]; maxBucketIdx = i; }
+    }
+    var domR = Math.round(bucketR[maxBucketIdx] / maxBucket);
+    var domG = Math.round(bucketG[maxBucketIdx] / maxBucket);
+    var domB = Math.round(bucketB[maxBucketIdx] / maxBucket);
+    var hexStr = '#' + ((1 << 24) + (domR << 16) + (domG << 8) + domB).toString(16).slice(1).toUpperCase();
+
+    var swatchWrap = document.getElementById('color-swatch-wrap');
+    swatchWrap.style.display = 'flex';
+    document.getElementById('color-swatch').style.background = hexStr;
+    document.getElementById('color-hex').textContent = hexStr;
+    document.getElementById('color-rgb').textContent = 'rgb(' + domR + ', ' + domG + ', ' + domB + ')';
+
+    // ── Push to RGB + Luminance history ──
+    pushHistory(rgbHistory, avgR, avgG, avgB);
+    pushHistory(lumHistory, avgL, 0, 0);
+    if (rgbHistCtx) drawRGBHistory(rgbHistCtx, rgbHistory);
+    if (lumHistCtx) drawLumHistory(lumHistCtx, lumHistory);
+
+    requestAnimationFrame(processFrame);
+  }
+
+  video.addEventListener('loadeddata', function() {
+    requestAnimationFrame(processFrame);
+  });
+}
+
+// ─── MICROPHONE + SPECTROGRAM ─────────────────────────────────────────────────
+
+// ─── Pitch Detection (autocorrelation) ───────────────────────────────────────
+
+var NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+function detectPitch(buf, sampleRate) {
+  // Autocorrelation pitch detection
+  var SIZE = buf.length;
+  var rms = 0;
+  for (var i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / SIZE);
+  if (rms < 0.01) return null; // too quiet
+
+  // Normalized autocorrelation
+  var corr = new Float32Array(SIZE);
+  for (var lag = 0; lag < SIZE; lag++) {
+    var sum = 0;
+    for (var i = 0; i < SIZE - lag; i++) sum += buf[i] * buf[i + lag];
+    corr[lag] = sum;
+  }
+
+  // Find first dip then first peak after it
+  var d = 0;
+  while (d < SIZE / 2 && corr[d] > corr[d + 1]) d++;
+  var maxVal = -1, maxIdx = d;
+  for (var i = d; i < SIZE / 2; i++) {
+    if (corr[i] > maxVal) { maxVal = corr[i]; maxIdx = i; }
+  }
+
+  // Parabolic interpolation for sub-sample accuracy
+  if (maxIdx > 0 && maxIdx < SIZE - 1) {
+    var y0 = corr[maxIdx - 1], y1 = corr[maxIdx], y2 = corr[maxIdx + 1];
+    var shift = (y2 - y0) / (2 * (2 * y1 - y0 - y2));
+    if (isFinite(shift)) maxIdx = maxIdx + shift;
+  }
+
+  var freq = sampleRate / maxIdx;
+  if (freq < 50 || freq > 4200) return null; // out of useful range
+  return freq;
+}
+
+function freqToNote(freq) {
+  var semitone = 12 * Math.log2(freq / 440);
+  var midi = Math.round(semitone) + 69;
+  var cents = Math.round((semitone - Math.round(semitone)) * 100);
+  var name = NOTE_NAMES[midi % 12];
+  var octave = Math.floor(midi / 12) - 1;
+  return { name: name + octave, cents: cents, midi: midi };
+}
+
+// ─── Chord Detection (FFT spectral peak analysis) ────────────────────────────
+
+// Chord templates: intervals relative to root (in semitones)
+var CHORD_TEMPLATES = [
+  { name: 'maj',  intervals: [0, 4, 7] },
+  { name: 'min',  intervals: [0, 3, 7] },
+  { name: 'dim',  intervals: [0, 3, 6] },
+  { name: 'aug',  intervals: [0, 4, 8] },
+  { name: '7',    intervals: [0, 4, 7, 10] },
+  { name: 'maj7', intervals: [0, 4, 7, 11] },
+  { name: 'm7',   intervals: [0, 3, 7, 10] },
+  { name: 'dim7', intervals: [0, 3, 6, 9] },
+  { name: 'sus4', intervals: [0, 5, 7] },
+  { name: 'sus2', intervals: [0, 2, 7] },
+  { name: 'add9', intervals: [0, 4, 7, 14] },
+  { name: 'm7b5', intervals: [0, 3, 6, 10] },
+  { name: '5',    intervals: [0, 7] }
+];
+
+function detectChordNotes(freqBuf, sampleRate, binCount) {
+  // Frequency per FFT bin
+  var binHz = sampleRate / (binCount * 2);
+
+  // Compute noise floor as median of all bins in 80–5000 Hz range
+  var loIdx = Math.floor(80 / binHz);
+  var hiIdx = Math.min(Math.ceil(5000 / binHz), binCount - 1);
+  var vals = [];
+  for (var i = loIdx; i <= hiIdx; i++) vals.push(freqBuf[i]);
+  vals.sort(function(a, b) { return a - b; });
+  var median = vals[Math.floor(vals.length / 2)] || 0;
+  var threshold = Math.max(median + 30, 80);
+
+  // Find spectral peaks: local maxima above threshold
+  var peaks = [];
+  for (var i = loIdx + 1; i < hiIdx; i++) {
+    if (freqBuf[i] >= threshold &&
+        freqBuf[i] >= freqBuf[i - 1] &&
+        freqBuf[i] >= freqBuf[i + 1]) {
+      // Parabolic interpolation for better frequency estimate
+      var y0 = freqBuf[i - 1], y1 = freqBuf[i], y2 = freqBuf[i + 1];
+      var denom = 2 * y1 - y0 - y2;
+      var shift = denom > 0 ? (y2 - y0) / (2 * denom) : 0;
+      var freq = (i + shift) * binHz;
+      peaks.push({ freq: freq, amp: y1 });
+    }
+  }
+
+  // Sort by amplitude descending
+  peaks.sort(function(a, b) { return b.amp - a.amp; });
+
+  // Group by pitch class — keep strongest peak per note, filter harmonics
+  var noteMap = {};  // pitchClass → { freq, amp, midi, name }
+  var detected = [];
+
+  for (var p = 0; p < peaks.length && detected.length < 8; p++) {
+    var freq = peaks[p].freq;
+    var semitone = 12 * Math.log2(freq / 440);
+    var midi = Math.round(semitone) + 69;
+    var pc = ((midi % 12) + 12) % 12;
+
+    if (noteMap[pc] !== undefined) continue; // already have this pitch class
+
+    // Check if this is likely a harmonic of an already-detected stronger note
+    var isHarmonic = false;
+    for (var d = 0; d < detected.length; d++) {
+      var ratio = freq / detected[d].freq;
+      // Check for harmonic ratios 2:1, 3:1, 4:1, 5:1
+      for (var h = 2; h <= 5; h++) {
+        if (Math.abs(ratio - h) < 0.06) { isHarmonic = true; break; }
+      }
+      if (isHarmonic) break;
+    }
+    if (isHarmonic) continue;
+
+    var name = NOTE_NAMES[pc];
+    var octave = Math.floor(midi / 12) - 1;
+    var entry = { freq: freq, amp: peaks[p].amp, midi: midi, pc: pc, name: name, fullName: name + octave };
+    noteMap[pc] = entry;
+    detected.push(entry);
+  }
+
+  // Sort by MIDI note (low to high)
+  detected.sort(function(a, b) { return a.midi - b.midi; });
+  return detected;
+}
+
+function identifyChord(notes) {
+  if (notes.length < 2) return null;
+
+  var pitchClasses = [];
+  for (var i = 0; i < notes.length; i++) pitchClasses.push(notes[i].pc);
+
+  // Unique pitch classes
+  var unique = [];
+  var seen = {};
+  for (var i = 0; i < pitchClasses.length; i++) {
+    if (!seen[pitchClasses[i]]) { unique.push(pitchClasses[i]); seen[pitchClasses[i]] = true; }
+  }
+  if (unique.length < 2) return null;
+
+  var bestMatch = null;
+  var bestScore = -1;
+
+  // Try each detected note as potential root
+  for (var r = 0; r < unique.length; r++) {
+    var root = unique[r];
+    // Compute intervals from this root
+    var intervals = [];
+    for (var i = 0; i < unique.length; i++) {
+      intervals.push(((unique[i] - root) + 12) % 12);
+    }
+    intervals.sort(function(a, b) { return a - b; });
+
+    // Match against chord templates
+    for (var t = 0; t < CHORD_TEMPLATES.length; t++) {
+      var tpl = CHORD_TEMPLATES[t];
+      var tplNorm = [];
+      for (var i = 0; i < tpl.intervals.length; i++) tplNorm.push(tpl.intervals[i] % 12);
+
+      // Count matching intervals
+      var hits = 0;
+      for (var i = 0; i < tplNorm.length; i++) {
+        if (intervals.indexOf(tplNorm[i]) !== -1) hits++;
+      }
+      // Penalize extra notes not in template
+      var extras = 0;
+      for (var i = 0; i < intervals.length; i++) {
+        if (tplNorm.indexOf(intervals[i]) === -1) extras++;
+      }
+
+      // Score: higher for more template hits, lower for extras
+      var score = (hits / tplNorm.length) - (extras * 0.15);
+      // Require at least all template notes matched
+      if (hits === tplNorm.length && score > bestScore) {
+        bestScore = score;
+        bestMatch = { root: root, rootName: NOTE_NAMES[root], quality: tpl.name, score: score };
+      }
+    }
+  }
+
+  // Fallback: if no full template match but 3+ notes, show notes only
+  if (!bestMatch && unique.length >= 2) {
+    // Try partial matches (allow one missing template note for triads)
+    for (var r = 0; r < unique.length; r++) {
+      var root = unique[r];
+      var intervals = [];
+      for (var i = 0; i < unique.length; i++) {
+        intervals.push(((unique[i] - root) + 12) % 12);
+      }
+      intervals.sort(function(a, b) { return a - b; });
+
+      for (var t = 0; t < CHORD_TEMPLATES.length; t++) {
+        var tpl = CHORD_TEMPLATES[t];
+        if (tpl.intervals.length > 3) continue; // only try triads for partial
+        var tplNorm = [];
+        for (var i = 0; i < tpl.intervals.length; i++) tplNorm.push(tpl.intervals[i] % 12);
+
+        var hits = 0;
+        for (var i = 0; i < tplNorm.length; i++) {
+          if (intervals.indexOf(tplNorm[i]) !== -1) hits++;
+        }
+        if (hits >= tplNorm.length - 1 && hits >= 2) {
+          var score = hits / tplNorm.length - 0.1;
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = { root: root, rootName: NOTE_NAMES[root], quality: tpl.name + '?', score: score };
+          }
+        }
+      }
+    }
+  }
+
+  return bestMatch;
+}
+
+// ─── Peak Hold + Pitch History state ──────────────────────────────────────────
+var peakDbfs = -Infinity;
+var peakDecayRate = 0.15;  // dB per frame to decay
+
+var PITCH_HISTORY_LEN = 150;
+var pitchHistoryBuf = new Float32Array(PITCH_HISTORY_LEN);
+var pitchHistoryIdx = 0;
+var pitchHistoryFull = false;
+var pitchHistCtx = null;
+
+function pushPitchHistory(freq) {
+  pitchHistoryBuf[pitchHistoryIdx] = freq;
+  pitchHistoryIdx++;
+  if (pitchHistoryIdx >= PITCH_HISTORY_LEN) { pitchHistoryIdx = 0; pitchHistoryFull = true; }
+}
+
+function drawPitchHistory(ctx) {
+  var cw = ctx.canvas.width, ch = ctx.canvas.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  var count = pitchHistoryFull ? PITCH_HISTORY_LEN : pitchHistoryIdx;
+  if (count < 2) return;
+
+  // Pitch range: 50 Hz – 2000 Hz, log scale
+  var minLog = Math.log2(50), maxLog = Math.log2(2000);
+  var start = pitchHistoryFull ? pitchHistoryIdx : 0;
+
+  // Grid lines at note boundaries
+  var gridFreqs = [100, 200, 440, 1000];
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  for (var g = 0; g < gridFreqs.length; g++) {
+    var gy = ch - ((Math.log2(gridFreqs[g]) - minLog) / (maxLog - minLog)) * ch;
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(cw, gy); ctx.stroke();
+  }
+
+  // Draw pitch line
+  ctx.strokeStyle = '#ff3d6e';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  var started = false;
+  for (var i = 0; i < count; i++) {
+    var si = (start + i) % PITCH_HISTORY_LEN;
+    var freq = pitchHistoryBuf[si];
+    var px = (i / (PITCH_HISTORY_LEN - 1)) * cw;
+    if (freq <= 0) { started = false; continue; }
+    var py = ch - ((Math.log2(freq) - minLog) / (maxLog - minLog)) * ch;
+    py = Math.max(0, Math.min(ch, py));
+    if (!started) { ctx.moveTo(px, py); started = true; }
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+}
+
+function setupMic(stream) {
+  var ctx      = new (window.AudioContext || window.webkitAudioContext)();
+  var src      = ctx.createMediaStreamSource(stream);
+  var analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;   // 1024 bins — good frequency resolution
+  analyser.smoothingTimeConstant = 0.75;
+  src.connect(analyser);
+
+  var freqBuf = new Uint8Array(analyser.frequencyBinCount);   // 1024 bins
+  var timeBuf = new Float32Array(analyser.fftSize);            // for RMS + pitch
+
+  setCard('mic', 'active');
+  document.getElementById('pitch-wrap').style.display = 'block';
+  document.getElementById('chord-wrap').style.display = 'block';
+  document.getElementById('dbfs-meter').style.display = 'block';
+
+  // ── Pitch history canvas ──
+  var pitchHistWrap = document.getElementById('pitch-history-wrap');
+  pitchHistWrap.style.display = 'flex';
+  var phc = document.getElementById('pitch-history-canvas');
+  var phw = phc.parentElement;
+  phc.width = phw.clientWidth || 300;
+  phc.height = phw.clientHeight || 60;
+  pitchHistCtx = phc.getContext('2d');
+
+  // ── Oscilloscope canvas ──
+  var scopeWrap = document.getElementById('scope-wrap');
+  scopeWrap.style.display = 'flex';
+  scopeWrap.style.flexDirection = 'column';
+  var scopeCanvas = document.getElementById('scope-canvas');
+  scopeCanvas.width = scopeCanvas.parentElement.clientWidth || 300;
+  var scopeCtx = scopeCanvas.getContext('2d');
+  var SCW = scopeCanvas.width, SCH = scopeCanvas.height;
+
+  // ── Spectrogram canvas (scrolling waterfall) ──
+  var specWrap   = document.getElementById('spec-wrap');
+  specWrap.style.display = 'flex';
+  specWrap.style.flexDirection = 'column';
+
+  var specCanvas = document.getElementById('spec-canvas');
+  var fftCanvas  = document.getElementById('fft-canvas');
+
+  // Size canvases to their wrapper widths
+  function sizeCanvases() {
+    var w = specCanvas.parentElement.clientWidth || 300;
+    specCanvas.width = w;
+    fftCanvas.width  = fftCanvas.parentElement.clientWidth || 300;
+  }
+  sizeCanvases();
+
+  var specCtx = specCanvas.getContext('2d');
+  var fftCtx  = fftCanvas.getContext('2d');
+  var SW = specCanvas.width, SH = specCanvas.height;
+  var FW = fftCanvas.width,  FH = fftCanvas.height;
+
+  // Colour map for spectrogram: black → dark blue → cyan → green → yellow → red
+  function spectroColor(v) {  // v: 0–255
+    // Map through 5 colour stops
+    var t = v / 255;
+    var r, g, b;
+    if (t < 0.25) {
+      var s = t / 0.25;
+      r = 0; g = 0; b = Math.round(s * 180);
+    } else if (t < 0.5) {
+      var s = (t - 0.25) / 0.25;
+      r = 0; g = Math.round(s * 255); b = Math.round(180 + s * 75);
+    } else if (t < 0.75) {
+      var s = (t - 0.5) / 0.25;
+      r = Math.round(s * 255); g = 255; b = Math.round(255 * (1 - s));
+    } else {
+      var s = (t - 0.75) / 0.25;
+      r = 255; g = Math.round(255 * (1 - s)); b = 0;
+    }
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
+
+  // Pre-build colour lookup table
+  var colorTable = new Array(256);
+  for (var i = 0; i < 256; i++) colorTable[i] = spectroColor(i);
+
+  function drawSpecColumn() {
+    // Shift left by 1 pixel
+    specCtx.drawImage(specCanvas, -1, 0);
+
+    // Draw new column on right edge: low freq at bottom, high at top
+    var bins = analyser.frequencyBinCount; // 1024
+    var colData = specCtx.createImageData(1, SH);
+    var cd = colData.data;
+    for (var y = 0; y < SH; y++) {
+      var binIdx = Math.floor((1 - y / (SH - 1)) * (bins - 1));
+      var amp    = freqBuf[Math.min(binIdx, bins - 1)];
+      var m2     = colorTable[amp].match(/(\d+),(\d+),(\d+)/);
+      var p      = y * 4;
+      cd[p]   = +m2[1];
+      cd[p+1] = +m2[2];
+      cd[p+2] = +m2[3];
+      cd[p+3] = 255;
+    }
+    specCtx.putImageData(colData, SW - 1, 0);
+  }
+
+  function drawFFT() {
+    fftCtx.clearRect(0, 0, FW, FH);
+    var bins = analyser.frequencyBinCount;
+    // Downsample bins to canvas width
+    var bw = FW / bins;
+    for (var i = 0; i < bins; i++) {
+      var v  = freqBuf[i] / 255;
+      var h  = v * FH;
+      // Colour by frequency
+      var hue = 180 + (i / bins) * 180; // cyan → magenta
+      fftCtx.fillStyle = 'hsla(' + hue + ',100%,60%,0.85)';
+      fftCtx.fillRect(i * bw, FH - h, Math.max(1, bw - 0.5), h);
+    }
+  }
+
+  function drawScope() {
+    scopeCtx.clearRect(0, 0, SCW, SCH);
+    // Zero line
+    scopeCtx.strokeStyle = 'rgba(255,255,255,0.06)';
+    scopeCtx.lineWidth = 1;
+    scopeCtx.beginPath(); scopeCtx.moveTo(0, SCH / 2); scopeCtx.lineTo(SCW, SCH / 2); scopeCtx.stroke();
+    // Waveform
+    scopeCtx.strokeStyle = '#b9ff6a';
+    scopeCtx.lineWidth = 1.2;
+    scopeCtx.beginPath();
+    var step = timeBuf.length / SCW;
+    for (var i = 0; i < SCW; i++) {
+      var idx = Math.floor(i * step);
+      var v = timeBuf[idx];
+      var y = (1 - v) * SCH / 2;  // v is -1 to +1
+      if (i === 0) scopeCtx.moveTo(i, y); else scopeCtx.lineTo(i, y);
+    }
+    scopeCtx.stroke();
+  }
+
+  function draw() {
+    requestAnimationFrame(draw);
+
+    analyser.getByteFrequencyData(freqBuf);
+    analyser.getFloatTimeDomainData(timeBuf);
+
+    // ── RMS → dBFS ──
+    var sum = 0;
+    for (var i = 0; i < timeBuf.length; i++) sum += timeBuf[i] * timeBuf[i];
+    var rms  = Math.sqrt(sum / timeBuf.length);
+    var dbfs = rms > 0 ? 20 * Math.log10(rms) : -Infinity;
+    var dbDisplay  = isFinite(dbfs) ? dbfs.toFixed(1) : '−∞';
+    var pct        = Math.max(0, Math.min(100, ((dbfs + 60) / 60) * 100));
+    var levelPct   = (rms * 100).toFixed(1);
+
+    setVal('mic',
+      'Level <span class="num">' + levelPct + '</span><span class="unit">%</span>' +
+      ' &nbsp; <span class="num">' + dbDisplay + '</span><span class="unit"> dBFS</span>' +
+      ' &nbsp; SR <span class="num">' + (ctx.sampleRate / 1000).toFixed(1) + '</span><span class="unit">kHz</span>');
+
+    document.getElementById('meter-fill').style.width = pct + '%';
+
+    // ── Peak hold on dBFS meter ──
+    if (isFinite(dbfs) && dbfs > peakDbfs) {
+      peakDbfs = dbfs;
+    } else {
+      peakDbfs -= peakDecayRate;
+    }
+    var peakPct = Math.max(0, Math.min(100, ((peakDbfs + 60) / 60) * 100));
+    document.getElementById('meter-peak').style.left = peakPct + '%';
+
+    // ── Pitch detection ──
+    var pitch = detectPitch(timeBuf, ctx.sampleRate);
+    if (pitch) {
+      var note = freqToNote(pitch);
+      document.getElementById('pitch-note').textContent = note.name;
+      document.getElementById('pitch-freq').innerHTML =
+        '<span class="num">' + pitch.toFixed(1) + '</span><span class="unit"> Hz</span>';
+      var centsEl = document.getElementById('pitch-cents');
+      var centsSign = note.cents >= 0 ? '+' : '';
+      centsEl.textContent = centsSign + note.cents + '¢';
+      centsEl.className = 'pitch-cents ' + (note.cents >= 0 ? 'sharp' : 'flat');
+      // Tuning meter: -50 to +50 cents mapped to 0%–100%
+      var meterPct = Math.max(0, Math.min(100, (note.cents + 50) / 100 * 100));
+      document.getElementById('pitch-meter-fill').style.left = meterPct + '%';
+    } else {
+      document.getElementById('pitch-note').textContent = '—';
+      document.getElementById('pitch-freq').innerHTML = '';
+      document.getElementById('pitch-cents').textContent = '';
+      document.getElementById('pitch-meter-fill').style.left = '50%';
+    }
+
+    // ── Chord detection (FFT peak analysis) ──
+    var chordNotes = detectChordNotes(freqBuf, ctx.sampleRate, analyser.frequencyBinCount);
+    var chord = identifyChord(chordNotes);
+    if (chord && chordNotes.length >= 2) {
+      document.getElementById('chord-name').textContent = chord.rootName;
+      document.getElementById('chord-quality').textContent = chord.quality;
+      var badgesHtml = '';
+      for (var ci = 0; ci < chordNotes.length; ci++) {
+        var isRoot = chordNotes[ci].pc === chord.root;
+        badgesHtml += '<span class="chord-note-badge' + (isRoot ? ' root' : '') + '">' +
+          chordNotes[ci].fullName + '</span>';
+      }
+      document.getElementById('chord-notes-row').innerHTML = badgesHtml;
+    } else if (chordNotes.length >= 1) {
+      document.getElementById('chord-name').textContent = '—';
+      document.getElementById('chord-quality').textContent = '';
+      var badgesHtml = '';
+      for (var ci = 0; ci < chordNotes.length; ci++) {
+        badgesHtml += '<span class="chord-note-badge">' + chordNotes[ci].fullName + '</span>';
+      }
+      document.getElementById('chord-notes-row').innerHTML = badgesHtml;
+    } else {
+      document.getElementById('chord-name').textContent = '—';
+      document.getElementById('chord-quality').textContent = '';
+      document.getElementById('chord-notes-row').innerHTML = '';
+    }
+
+    // ── Pitch history ──
+    pushPitchHistory(pitch || 0);
+    if (pitchHistCtx) drawPitchHistory(pitchHistCtx);
+
+    // ── Oscilloscope ──
+    drawScope();
+
+    // ── Spectrogram + FFT ──
+    drawSpecColumn();
+    drawFFT();
+  }
+
+  draw();
+}
+
+// ─── LOCATION ────────────────────────────────────────────────────────────────
+
+function setupLocation(pos) {
+  setCard('location', 'active');
+  var c = pos.coords;
+  setVal('location',
+    '<div class="coord-row"><span class="coord-key">🌍 LAT</span><span class="coord-val">'    + c.latitude.toFixed(6)  + '°</span></div>' +
+    '<div class="coord-row"><span class="coord-key">🌍 LNG</span><span class="coord-val">'    + c.longitude.toFixed(6) + '°</span></div>' +
+    '<div class="coord-row"><span class="coord-key">⛰️ ALT</span><span class="coord-val">'    + (c.altitude          != null ? c.altitude.toFixed(1)          + ' m'    : 'N/A') + '</span></div>' +
+    '<div class="coord-row"><span class="coord-key">🎯 ALT ACC</span><span class="coord-val">' + (c.altitudeAccuracy != null ? '±' + c.altitudeAccuracy.toFixed(1) + ' m' : 'N/A') + '</span></div>' +
+    '<div class="coord-row"><span class="coord-key">🎯 ACC</span><span class="coord-val">±'   + c.accuracy.toFixed(1)                                 + ' m</span></div>' +
+    '<div class="coord-row"><span class="coord-key">🏎️ SPEED</span><span class="coord-val">'  + (c.speed             != null ? (c.speed * 3.6).toFixed(1)     + ' km/h' : 'N/A') + '</span></div>' +
+    '<div class="coord-row"><span class="coord-key">🧭 HDG</span><span class="coord-val">'    + (c.heading           != null ? c.heading.toFixed(1)           + '°'     : 'N/A') + '</span></div>');
+
+  updateMapGPS(c.latitude, c.longitude, c.accuracy);
+}
+
+// ─── LOCATION MAP ─────────────────────────────────────────────────────────────
+
+var locMap = null;
+var gpsMarker = null;
+var gpsCircle = null;
+var ipMarker = null;
+var distanceLine = null;
+var gpsLatLng = null;
+var ipLatLng = null;
+
+// Custom marker icons using divIcon (no image files needed)
+var gpsIcon = L.divIcon({
+  className: '',
+  html: '<div style="background:#00e5ff;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 8px #00e5ff;"></div>',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7]
+});
+var ipIcon = L.divIcon({
+  className: '',
+  html: '<div style="background:#ff3d6e;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 8px #ff3d6e;"></div>',
+  iconSize: [14, 14],
+  iconAnchor: [7, 7]
+});
+
+function initMap() {
+  if (locMap) return;
+  var container = document.getElementById('map-container');
+  container.style.display = 'block';
+  document.getElementById('map-legend').style.display = 'block';
+
+  locMap = L.map(container, { zoomControl: true, attributionControl: true }).setView([20, 0], 2);
+  // OpenStreetMap's own tiles, darkened in CSS (.map-dark). CARTO's free
+  // basemaps now answer every request with an "API KEY REQUIRED" watermark.
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright" style="color:var(--dim)">OpenStreetMap</a> contributors',
+    className: 'map-dark',
+    maxZoom: 19
+  }).addTo(locMap);
+
+  setCard('map', 'active');
+  setVal('map', '');
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  var R = 6371;
+  var dLat = (lat2 - lat1) * Math.PI / 180;
+  var dLon = (lon2 - lon1) * Math.PI / 180;
+  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function updateDistance() {
+  if (!gpsLatLng || !ipLatLng) {
+    document.getElementById('map-distance-label').textContent = '—';
+    return;
+  }
+  var km = haversineKm(gpsLatLng[0], gpsLatLng[1], ipLatLng[0], ipLatLng[1]);
+  var txt = km < 1 ? (km * 1000).toFixed(0) + ' m' : km.toFixed(1) + ' km';
+  document.getElementById('map-distance-label').textContent = txt;
+
+  // Draw/update dashed line between markers
+  var pts = [gpsLatLng, ipLatLng];
+  if (distanceLine) {
+    distanceLine.setLatLngs(pts);
+  } else {
+    distanceLine = L.polyline(pts, { color: '#4a6070', weight: 1, dashArray: '6,4', opacity: 0.7 }).addTo(locMap);
+  }
+}
+
+function fitMapBounds() {
+  if (!locMap) return;
+  var pts = [];
+  if (gpsLatLng) pts.push(gpsLatLng);
+  if (ipLatLng) pts.push(ipLatLng);
+  if (pts.length === 0) return;
+  if (pts.length === 1) {
+    locMap.setView(pts[0], 13);
+  } else {
+    locMap.fitBounds(L.latLngBounds(pts), { padding: [40, 40], maxZoom: 15 });
+  }
+}
+
+function updateMapGPS(lat, lng, accuracy) {
+  initMap();
+  gpsLatLng = [lat, lng];
+
+  if (gpsMarker) {
+    gpsMarker.setLatLng(gpsLatLng);
+  } else {
+    gpsMarker = L.marker(gpsLatLng, { icon: gpsIcon }).addTo(locMap)
+      .bindPopup('<b style="color:#080c10;">📍 GPS Location</b><br>' + lat.toFixed(6) + ', ' + lng.toFixed(6));
+  }
+
+  // Accuracy circle
+  if (accuracy) {
+    if (gpsCircle) {
+      gpsCircle.setLatLng(gpsLatLng).setRadius(accuracy);
+    } else {
+      gpsCircle = L.circle(gpsLatLng, {
+        radius: accuracy, color: '#00e5ff', fillColor: '#00e5ff',
+        fillOpacity: 0.08, weight: 1, opacity: 0.3
+      }).addTo(locMap);
+    }
+  }
+
+  document.getElementById('map-gps-label').textContent = lat.toFixed(6) + ', ' + lng.toFixed(6);
+  fitMapBounds();
+  updateDistance();
+}
+
+function updateMapIP(lat, lng, city, region, country) {
+  initMap();
+  ipLatLng = [lat, lng];
+
+  var label = [city, region, country].filter(Boolean).join(', ');
+
+  if (ipMarker) {
+    ipMarker.setLatLng(ipLatLng);
+  } else {
+    ipMarker = L.marker(ipLatLng, { icon: ipIcon }).addTo(locMap)
+      .bindPopup('<b style="color:#080c10;">🌐 Geo IP Location</b><br>' + label + '<br>' + lat.toFixed(4) + ', ' + lng.toFixed(4));
+  }
+
+  document.getElementById('map-ip-label').textContent = label || (lat.toFixed(4) + ', ' + lng.toFixed(4));
+  fitMapBounds();
+  updateDistance();
+}
+
+// Fetch IP geolocation
+fetch('https://ipapi.co/json/')
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    if (d.latitude && d.longitude) {
+      updateMapIP(d.latitude, d.longitude, d.city, d.region, d.country_name);
+    }
+  })
+  .catch(function() { /* IP geolocation unavailable — map still works with GPS */ });
+
+// ─── SCREEN ORIENTATION ──────────────────────────────────────────────────────
+
+function updateScreenOrientation() {
+  var type = 'unknown', angle = 0;
+
+  // Prefer Screen Orientation API (iOS 16.4+)
+  if (screen.orientation && screen.orientation.type) {
+    type = screen.orientation.type;
+    angle = screen.orientation.angle;
+  } else if (window.orientation !== undefined) {
+    // Legacy fallback
+    angle = window.orientation;
+    switch (angle) {
+      case 0:    type = 'portrait-primary'; break;
+      case 180:  type = 'portrait-secondary'; break;
+      case 90:   type = 'landscape-primary'; break;
+      case -90:  type = 'landscape-secondary'; break;
+      default:   type = 'unknown';
+    }
+  } else {
+    // matchMedia fallback
+    var isPortrait = window.matchMedia('(orientation: portrait)').matches;
+    type = isPortrait ? 'portrait-primary' : 'landscape-primary';
+    angle = isPortrait ? 0 : 90;
+  }
+
+  setCard('screen-orient', 'active');
+  setVal('screen-orient',
+    '<div class="coord-row"><span class="coord-key">🔄 TYPE</span><span class="coord-val">' + type + '</span></div>' +
+    '<div class="coord-row"><span class="coord-key">📐 ANGLE</span><span class="coord-val"><span class="num">' + angle + '</span><span class="unit">°</span></span></div>');
+
+  // Rotate the phone icon
+  var icon = document.getElementById('orient-icon');
+  var isLandscape = type.indexOf('landscape') !== -1;
+  icon.style.transform = isLandscape ? 'rotate(90deg)' : 'rotate(0deg)';
+}
+
+// Start immediately and listen for changes
+updateScreenOrientation();
+if (screen.orientation) {
+  screen.orientation.addEventListener('change', updateScreenOrientation);
+}
+window.addEventListener('orientationchange', updateScreenOrientation);
+window.matchMedia('(orientation: portrait)').addEventListener('change', updateScreenOrientation);
+
+// ─── VISUAL VIEWPORT ─────────────────────────────────────────────────────────
+
+function updateViewport() {
+  var vv = window.visualViewport;
+  if (!vv) {
+    setCard('viewport', 'error');
+    setVal('viewport', '<span class="err">visualViewport not supported</span>');
+    return;
+  }
+
+  setCard('viewport', 'active');
+  setVal('viewport',
+    '<div class="coord-row"><span class="coord-key">↔️ WIDTH</span><span class="coord-val"><span class="num">' + Math.round(vv.width) + '</span><span class="unit">px</span></span></div>' +
+    '<div class="coord-row"><span class="coord-key">↕️ HEIGHT</span><span class="coord-val"><span class="num">' + Math.round(vv.height) + '</span><span class="unit">px</span></span></div>' +
+    '<div class="coord-row"><span class="coord-key">🔍 SCALE</span><span class="coord-val"><span class="num">' + vv.scale.toFixed(2) + '</span><span class="unit">×</span></span></div>' +
+    '<div class="coord-row"><span class="coord-key">⬆️ OFFSET Y</span><span class="coord-val"><span class="num">' + Math.round(vv.offsetTop) + '</span><span class="unit">px</span></span></div>' +
+    '<div class="coord-row"><span class="coord-key">📄 PAGE TOP</span><span class="coord-val"><span class="num">' + Math.round(vv.pageTop) + '</span><span class="unit">px</span></span></div>' +
+    '<div class="coord-row"><span class="coord-key">🔳 DPR</span><span class="coord-val"><span class="num">' + (window.devicePixelRatio || 1).toFixed(1) + '</span></span></div>');
+}
+
+// Start immediately and listen for changes
+updateViewport();
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', updateViewport);
+  window.visualViewport.addEventListener('scroll', updateViewport);
+}
+window.addEventListener('resize', updateViewport);
+
+// ─── SPEECH RECOGNITION ──────────────────────────────────────────────────────
+
+var speechRecog = null;
+var speechRunning = false;
+var speechTranscript = '';
+
+function setupSpeechRecognition() {
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    setCard('speech', 'error');
+    setVal('speech', '<span class="err">SpeechRecognition not supported (iOS 14.5+)</span>');
+    return;
+  }
+
+  setCard('speech', 'active');
+  setVal('speech',
+    '<div>Engine <span class="num">webkitSpeechRecognition</span></div>' +
+    '<div>Status <span class="num">Ready</span></div>');
+
+  document.getElementById('speech-controls').style.display = 'flex';
+  document.getElementById('transcript-box').style.display = 'block';
+
+  speechRecog = new SpeechRecognition();
+  speechRecog.continuous = true;
+  speechRecog.interimResults = true;
+  speechRecog.lang = 'en-US';
+
+  speechRecog.onresult = function(e) {
+    var interim = '';
+    var final = '';
+    for (var i = e.resultIndex; i < e.results.length; i++) {
+      var transcript = e.results[i][0].transcript;
+      if (e.results[i].isFinal) {
+        final += transcript;
+      } else {
+        interim += transcript;
+      }
+    }
+    if (final) {
+      speechTranscript += final + ' ';
+    }
+    var box = document.getElementById('transcript-box');
+    box.innerHTML = speechTranscript +
+      (interim ? '<span class="transcript-interim">' + interim + '</span>' : '');
+    box.scrollTop = box.scrollHeight;
+
+    // Update confidence from latest result
+    var lastResult = e.results[e.results.length - 1];
+    if (lastResult && lastResult[0]) {
+      var conf = (lastResult[0].confidence * 100).toFixed(0);
+      setVal('speech',
+        '<div>Engine <span class="num">webkitSpeechRecognition</span></div>' +
+        '<div>Confidence <span class="num">' + conf + '</span><span class="unit">%</span></div>');
+    }
+  };
+
+  speechRecog.onerror = function(e) {
+    // "no-speech" is not a real error, just silence
+    if (e.error === 'no-speech') return;
+    document.getElementById('speech-status').textContent = 'ERROR: ' + e.error;
+    document.getElementById('speech-status').className = 'speech-status';
+    if (e.error === 'not-allowed') {
+      setCard('speech', 'error');
+      setVal('speech', '<span class="err">Microphone permission denied</span>');
+    }
+  };
+
+  speechRecog.onend = function() {
+    // Auto-restart if still toggled on (iOS stops after pauses)
+    if (speechRunning) {
+      try { speechRecog.start(); } catch(e) {}
+    } else {
+      document.getElementById('speech-btn').textContent = 'Start';
+      document.getElementById('speech-btn').className = 'speech-btn';
+      document.getElementById('speech-status').textContent = 'IDLE';
+      document.getElementById('speech-status').className = 'speech-status';
+    }
+  };
+}
+
+function toggleSpeechRecognition() {
+  if (!speechRecog) return;
+  if (speechRunning) {
+    speechRunning = false;
+    speechRecog.stop();
+  } else {
+    speechRunning = true;
+    speechTranscript = '';
+    document.getElementById('transcript-box').innerHTML = '';
+    try {
+      speechRecog.start();
+      document.getElementById('speech-btn').textContent = 'Stop';
+      document.getElementById('speech-btn').className = 'speech-btn listening';
+      document.getElementById('speech-status').textContent = 'LISTENING';
+      document.getElementById('speech-status').className = 'speech-status live';
+    } catch(e) {
+      speechRunning = false;
+      document.getElementById('speech-status').textContent = 'ERROR: ' + e.message;
+    }
+  }
+}
+
+// ─── NETWORK / IP (Cloudflare Trace) ──────────────────────────────────────────
+
+function fetchNetworkInfo() {
+  fetch('/cdn-cgi/trace')
+    .then(function(r) { return r.text(); })
+    .then(function(text) {
+      var data = {};
+      text.trim().split('\n').forEach(function(line) {
+        var idx = line.indexOf('=');
+        if (idx !== -1) data[line.substring(0, idx)] = line.substring(idx + 1);
+      });
+
+      // Convert 2-letter country code to flag emoji
+      var flag = '🏳️';
+      if (data.loc && data.loc.length === 2) {
+        var cc = data.loc.toUpperCase();
+        flag = String.fromCodePoint(0x1F1E6 + cc.charCodeAt(0) - 65, 0x1F1E6 + cc.charCodeAt(1) - 65);
+      }
+
+      setCard('network', 'active');
+      setVal('network',
+        '<div class="coord-row"><span class="coord-key">🔗 IP</span><span class="coord-val">' + (data.ip || 'N/A') + '</span></div>' +
+        '<div class="coord-row"><span class="coord-key">' + flag + ' COUNTRY</span><span class="coord-val">' + (data.loc || 'N/A') + '</span></div>' +
+        '<div class="coord-row"><span class="coord-key">🏢 COLO</span><span class="coord-val">' + (data.colo || 'N/A') + '</span></div>' +
+        '<div class="coord-row"><span class="coord-key">🔒 TLS</span><span class="coord-val">' + (data.tls || 'N/A') + '</span></div>' +
+        '<div class="coord-row"><span class="coord-key">⚡ HTTP</span><span class="coord-val">' + (data.http || 'N/A') + '</span></div>' +
+        '<div class="coord-row"><span class="coord-key">🚀 WARP</span><span class="coord-val">' + (data.warp || 'off') + '</span></div>');
+    })
+    .catch(function(e) {
+      setCard('network', 'error');
+      setVal('network', '<span class="err">Failed to fetch: ' + e.message + '</span>');
+    });
+}
+
+fetchNetworkInfo();
+
+// ─── CLIENT / DEVICE ──────────────────────────────────────────────────────────
+
+function populateClientInfo() {
+  var rows = '';
+
+  function row(key, val) {
+    return '<div class="coord-row"><span class="coord-key">' + key + '</span><span class="coord-val">' + val + '</span></div>';
+  }
+
+  // User Agent
+  var ua = navigator.userAgent || 'N/A';
+  rows += row('🕵️ USER AGENT', '<span style="word-break:break-all;font-size:10px;">' + ua + '</span>');
+
+  // Language
+  var langs = navigator.languages ? navigator.languages.join(', ') : (navigator.language || 'N/A');
+  rows += row('🗣️ LANGUAGE', langs);
+
+  // Timezone
+  try {
+    var tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'N/A';
+    rows += row('🕐 TIMEZONE', tz);
+  } catch(e) {
+    rows += row('🕐 TIMEZONE', 'N/A');
+  }
+
+  // Platform
+  rows += row('💻 PLATFORM', navigator.platform || 'N/A');
+
+  // CPU Cores
+  rows += row('⚙️ CPU CORES', navigator.hardwareConcurrency || 'N/A');
+
+  // Device Memory (Chrome-only)
+  if (navigator.deviceMemory) {
+    rows += row('🧠 DEVICE MEMORY', navigator.deviceMemory + ' GB');
+  }
+
+  // Screen
+  rows += row('🖥️ SCREEN', screen.width + ' × ' + screen.height + ' @ ' + (window.devicePixelRatio || 1) + 'x');
+  rows += row('🎨 COLOR DEPTH', screen.colorDepth + '-bit');
+
+  // Touch Points
+  rows += row('👆 TOUCH POINTS', navigator.maxTouchPoints != null ? navigator.maxTouchPoints : 'N/A');
+
+  // Connection info (limited on iOS)
+  if (navigator.connection) {
+    var conn = navigator.connection;
+    var connStr = conn.effectiveType || 'unknown';
+    if (conn.downlink) connStr += ' / ' + conn.downlink + ' Mbps';
+    rows += row('📡 CONNECTION', connStr);
+  }
+
+  // Online status
+  rows += row('📶 ONLINE', navigator.onLine ? 'Yes' : 'No');
+
+  // Cookies
+  rows += row('🍪 COOKIES', navigator.cookieEnabled ? 'Enabled' : 'Disabled');
+
+  // Do Not Track / Global Privacy Control
+  var dnt = navigator.doNotTrack || window.doNotTrack || 'unset';
+  var gpc = navigator.globalPrivacyControl;
+  rows += row('🛡️ DNT / GPC', dnt + ' / ' + (gpc != null ? (gpc ? 'on' : 'off') : 'N/A'));
+
+  // Referrer
+  rows += row('↩️ REFERRER', document.referrer || '(direct)');
+
+  // GPU (WebGL renderer)
+  try {
+    var cvs = document.createElement('canvas');
+    var gl = cvs.getContext('webgl') || cvs.getContext('experimental-webgl');
+    if (gl) {
+      var dbg = gl.getExtension('WEBGL_debug_renderer_info');
+      if (dbg) {
+        rows += row('🎮 GPU', gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL));
+      }
+    }
+  } catch(e) { /* ignore */ }
+
+  // Performance memory (Chrome only)
+  if (performance.memory) {
+    var used = (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(1);
+    var total = (performance.memory.totalJSHeapSize / (1024 * 1024)).toFixed(1);
+    rows += row('📦 JS HEAP', used + ' / ' + total + ' MB');
+  }
+
+  setCard('client', 'active');
+  setVal('client', rows);
+}
+
+populateClientInfo();
+</script>
+</body>
+</html>
