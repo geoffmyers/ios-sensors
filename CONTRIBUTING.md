@@ -18,9 +18,20 @@ Then open <http://localhost:8000>. Any static file server works.
 
 ## Checks
 
-There is no automated test suite. Most sensors need a real phone, and iOS
-only exposes them on a secure (HTTPS) origin, so test changes on a device
-over HTTPS as well as on a desktop browser.
+<!-- CHECKS:START -->
+Every push and pull request runs these checks in GitHub Actions
+([`.github/workflows/checks.yml`](.github/workflows/checks.yml)), and every release has passed them.
+To run one yourself, use the same commands from the directory shown.
+
+**site** (Node.js 22, from the repository root):
+
+Every local file a page refers to exists, every script (inline or not) parses, and the Worker configuration deploys in a dry run with `npx wrangler@4 deploy --dry-run`; the script is in the workflow.
+
+<!-- CHECKS:END -->
+
+Most sensors need a real phone, and iOS only exposes them on a secure (HTTPS)
+origin, so also test changes on a device over HTTPS as well as on a desktop
+browser.
 
 ## Before you open a pull request
 
