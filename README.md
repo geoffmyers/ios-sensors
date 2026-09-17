@@ -117,6 +117,14 @@ does make three kinds of request that involve you:
 - **Speech recognition** is the browser's own service; Safari may send the
   audio to Apple to transcribe it.
 
+The camera, microphone and location watch stay open only while the page is in
+the foreground. Tap **"⏹ Stop Camera / Mic / Location"** to release all three
+immediately (the camera light and location indicator turn off); tap
+**"② Request Camera + Mic + Location"** again to resume without leaving the
+page. They also release automatically when the page is backgrounded
+(`visibilitychange`) or torn down (`pagehide` — covers navigation, closing the
+tab and iOS bfcache eviction), so nothing stays open once you switch away.
+
 ## Deployment
 
 The site is deployed as a [Cloudflare Worker with static

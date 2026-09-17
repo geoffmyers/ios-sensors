@@ -121,6 +121,8 @@
   .btn:disabled::before { display: none; }
   .btn.secondary { border-color: var(--accent3); color: var(--accent3); }
   .btn.secondary::before { background: var(--accent3); }
+  .btn.danger { border-color: var(--accent2); color: var(--accent2); }
+  .btn.danger::before { background: var(--accent2); }
 
   /* Status */
   .global-status {
@@ -460,6 +462,12 @@
     border-top: 1px solid var(--border);
   }
   .note strong { color: var(--accent2); }
+  .gh-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: var(--text); text-decoration: none;
+  }
+  .gh-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .gh-link svg { flex-shrink: 0; }
 .map-dark { filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9); }
 
   /* Dead reckoning */
@@ -522,6 +530,9 @@
     </button>
     <button class="btn secondary" id="btn-media" onclick="requestMediaPermissions()" disabled>
       <span>② Request Camera + Mic + Location</span>
+    </button>
+    <button class="btn danger" id="btn-stop-sensors" onclick="stopSensors()" disabled title="Release the camera, microphone and location watch">
+      <span>⏹ Stop Camera / Mic / Location</span>
     </button>
   </div>
 
@@ -828,6 +839,13 @@
   <div class="note" style="margin-top: 8px;">
     By <a href="https://www.geoffmyers.com" style="color: var(--accent); text-decoration: none;">Geoff Myers</a> ·
     <a href="https://github.com/geoffmyers/ios-sensors/blob/main/LICENSE.md" target="_blank" rel="noopener">GPL-3.0-or-later</a>
+  </div>
+
+  <div class="note" style="margin-top: 8px;">
+    <a class="gh-link" href="https://github.com/geoffmyers/ios-sensors" target="_blank" rel="noopener noreferrer">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false" fill="currentColor"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"></path></svg>
+      <span>View source on GitHub</span>
+    </a>
   </div>
 
 </div><!-- /container -->
@@ -1309,24 +1327,77 @@ function onOrientation(e) {
 
 // ─── STEP 2: Camera + Mic + Location ─────────────────────────────────────────
 
+// Live handles for the permission-gated sensors, so they can be released
+// (stopSensors()) and re-acquired (requestMediaPermissions()) without a
+// page reload. `sensorsActive` is checked at the top of every rAF-driven
+// draw loop (processFrame() for the camera, draw() for the mic) so a stop
+// also halts the CPU work, not just the underlying tracks.
+var camStream    = null;
+var micStream    = null;
+var micAudioCtx  = null;
+var geoWatchId   = null;
+var sensorsActive = false;
+
+// Humanise a getUserMedia() rejection instead of surfacing raw e.message —
+// mirrors piano-listener's err.name branching.
+function humanizeMediaError(e, label) {
+  switch (e.name) {
+    case 'NotAllowedError':
+    case 'PermissionDeniedError':
+      return label + ' access denied. Allow it for this site in your browser/OS settings, then tap the button again.';
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+      return 'No ' + label.toLowerCase() + ' device found on this device.';
+    case 'NotReadableError':
+    case 'TrackStartError':
+      return label + ' is already in use by another app or tab. Close it and try again.';
+    case 'OverconstrainedError':
+    case 'ConstraintNotSatisfiedError':
+      return label + ' does not support the requested settings.';
+    case 'SecurityError':
+      return label + ' blocked — this page must be loaded over HTTPS.';
+    case 'AbortError':
+      return label + ' request was interrupted. Try again.';
+    default:
+      return label + ' error: ' + (e.message || e.name || 'unknown error');
+  }
+}
+
+// Humanise a geolocation PositionError instead of surfacing raw e.message.
+function humanizeGeoError(e) {
+  switch (e.code) {
+    case e.PERMISSION_DENIED:
+      return 'Location access denied. Allow it for this site in your browser/OS settings, then tap the button again.';
+    case e.POSITION_UNAVAILABLE:
+      return 'Location unavailable — no GPS/network position could be determined.';
+    case e.TIMEOUT:
+      return 'Location request timed out. Move to an area with a clearer sky/signal and try again.';
+    default:
+      return 'GPS error: ' + (e.message || 'unknown error');
+  }
+}
+
 function requestMediaPermissions() {
   var btn = document.getElementById('btn-media');
+  var stopBtn = document.getElementById('btn-stop-sensors');
   btn.disabled = true;
   btn.querySelector('span').textContent = '⏳ Watch for iOS prompts…';
   document.getElementById('step2-status').textContent = '⏳';
+  document.getElementById('step2').classList.remove('done');
   setStatus('WAITING FOR PROMPTS…', false);
+  sensorsActive = true;
 
   var camP = navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
     .then(function(s) { setupCamera(s); })
-    .catch(function(e) { setCard('camera','error'); setVal('camera','<span class="err">Camera: '+e.message+'</span>'); });
+    .catch(function(e) { setCard('camera','error'); setVal('camera','<span class="err">' + humanizeMediaError(e, 'Camera') + '</span>'); });
 
   var micP = navigator.mediaDevices.getUserMedia({ audio: true })
     .then(function(s) { setupMic(s); })
-    .catch(function(e) { setCard('mic','error'); setVal('mic','<span class="err">Mic: '+e.message+'</span>'); });
+    .catch(function(e) { setCard('mic','error'); setVal('mic','<span class="err">' + humanizeMediaError(e, 'Microphone') + '</span>'); });
 
-  navigator.geolocation.watchPosition(
+  geoWatchId = navigator.geolocation.watchPosition(
     function(pos) { setupLocation(pos); },
-    function(e)   { setCard('location','error'); setVal('location','<span class="err">GPS: '+e.message+'</span>'); },
+    function(e)   { setCard('location','error'); setVal('location','<span class="err">' + humanizeGeoError(e) + '</span>'); },
     { enableHighAccuracy: true, maximumAge: 2000 }
   );
 
@@ -1336,12 +1407,59 @@ function requestMediaPermissions() {
     document.getElementById('step2-status').textContent = '✅';
     setStatus('ALL SENSORS ACTIVE', true);
     setupSpeechRecognition();
+    if (stopBtn) stopBtn.disabled = false;
   });
+}
+
+// Release the camera, microphone and GPS watch (and stop speech recognition,
+// which also holds the mic open). Safe to call multiple times, and safe to
+// call before any permission was ever granted. requestMediaPermissions()
+// re-acquires everything, so the Stop control doubles as Restart: once
+// stopped, "② Request Camera + Mic + Location" re-enables and starts again.
+function stopSensors() {
+  sensorsActive = false;
+
+  if (camStream) {
+    camStream.getTracks().forEach(function(t) { t.stop(); });
+    camStream = null;
+  }
+  var video = document.getElementById('camera-preview');
+  if (video) { video.pause(); video.srcObject = null; video.style.display = 'none'; }
+
+  if (micStream) {
+    micStream.getTracks().forEach(function(t) { t.stop(); });
+    micStream = null;
+  }
+  if (micAudioCtx) {
+    try { micAudioCtx.close(); } catch (e) {}
+    micAudioCtx = null;
+  }
+
+  if (geoWatchId != null) {
+    navigator.geolocation.clearWatch(geoWatchId);
+    geoWatchId = null;
+  }
+
+  if (typeof speechRecog !== 'undefined' && speechRecog && speechRunning) {
+    try { speechRecog.stop(); } catch (e) {}
+  }
+
+  var btn = document.getElementById('btn-media');
+  var stopBtn = document.getElementById('btn-stop-sensors');
+  if (btn) {
+    btn.disabled = false;
+    btn.querySelector('span').textContent = '② Request Camera + Mic + Location';
+  }
+  if (stopBtn) stopBtn.disabled = true;
+  document.getElementById('step2').classList.remove('done');
+  document.getElementById('step2-status').textContent = '⏹';
+  setStatus('CAMERA, MIC AND LOCATION STOPPED', false);
 }
 
 // ─── CAMERA + HISTOGRAM ───────────────────────────────────────────────────────
 
 function setupCamera(stream) {
+  camStream = stream;
   var video   = document.getElementById('camera-preview');
   var sample  = document.getElementById('cam-sample');
   video.srcObject = stream;
@@ -1397,6 +1515,7 @@ function setupCamera(stream) {
   }
 
   function processFrame() {
+    if (!sensorsActive) return; // released via stopSensors() — stop the rAF loop
     if (video.readyState < 2) { requestAnimationFrame(processFrame); return; }
 
     sCtx.drawImage(video, 0, 0, W, H);
@@ -1768,7 +1887,9 @@ function drawPitchHistory(ctx) {
 }
 
 function setupMic(stream) {
+  micStream   = stream;
   var ctx      = new (window.AudioContext || window.webkitAudioContext)();
+  micAudioCtx = ctx;
   var src      = ctx.createMediaStreamSource(stream);
   var analyser = ctx.createAnalyser();
   analyser.fftSize = 2048;   // 1024 bins — good frequency resolution
@@ -1904,6 +2025,7 @@ function setupMic(stream) {
   }
 
   function draw() {
+    if (!sensorsActive) return; // released via stopSensors() — stop the rAF loop
     requestAnimationFrame(draw);
 
     analyser.getByteFrequencyData(freqBuf);
@@ -2454,6 +2576,19 @@ function populateClientInfo() {
 }
 
 populateClientInfo();
+
+// ─── Release camera/mic/GPS when the page is torn down or backgrounded ──────
+// `pagehide` fires on close, navigation and bfcache eviction — the one event
+// that reliably runs before iOS Safari kills the page (`beforeunload` and
+// `unload` are unreliable on iOS and block bfcache). We also stop on
+// `visibilitychange` → hidden (e.g. switching tabs/apps) so the camera light
+// and GPS icon don't stay lit while the page is in the background; tapping
+// "② Request Camera + Mic + Location" again resumes everything without a
+// fresh permission prompt.
+window.addEventListener('pagehide', function() { stopSensors(); });
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden) stopSensors();
+});
 </script>
 </body>
 </html>
